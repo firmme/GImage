@@ -43,8 +43,9 @@ fn powershell(script: &str) -> Result<Command, String> {
         return Err("自动更新仅支持 Windows x64".into());
     }
     let system = std::env::var_os("SystemRoot").ok_or("找不到 Windows 系统目录")?;
-    let mut command =
-        Command::new(Path::new(&system).join("System32/WindowsPowerShell/v1.0/powershell.exe"));
+    let runtime = Path::new(&system).join("System32/WindowsPowerShell/v1.0");
+    let mut command = Command::new(runtime.join("powershell.exe"));
+    command.env("PSModulePath", runtime.join("Modules"));
     let bytes: Vec<_> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
     command
         .args([
@@ -116,13 +117,24 @@ pub fn check() -> Result<Option<Update>, String> {
         .strip_prefix("https://github.com/")
         .ok_or("程序未配置 GitHub 发布仓库")?;
     let installed = Version::parse(env!("CARGO_PKG_VERSION")).map_err(|_| "当前版本号无法识别")?;
-    let output = powershell(r#"
+    let output = powershell(concat!(
+        include_str!("../../scripts/update-http.ps1"),
+        r#"
         $ErrorActionPreference = 'Stop'
-        [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
-        $response = Invoke-WebRequest -UseBasicParsing -TimeoutSec 20 -Uri $env:GIMAGE_UPDATE_API -UserAgent 'GImage Updater' -Headers @{ Accept = 'application/vnd.github+json' }
-        [Console]::Write($response.Content)
-    "#)?.env("GIMAGE_UPDATE_API", format!("https://api.github.com/repos/{repo}/releases/latest"))
-        .output().map_err(|error| format!("无法启动更新检查：{error}"))?;
+        [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+        $response = Open-UpdateResponse $env:GIMAGE_UPDATE_API 20000
+        try {
+            $reader = [IO.StreamReader]::new($response.GetResponseStream(), [Text.Encoding]::UTF8)
+            try { [Console]::Write($reader.ReadToEnd()) } finally { $reader.Dispose() }
+        } finally { $response.Dispose() }
+    "#
+    ))?
+    .env(
+        "GIMAGE_UPDATE_API",
+        format!("https://api.github.com/repos/{repo}/releases/latest"),
+    )
+    .output()
+    .map_err(|error| format!("无法启动更新检查：{error}"))?;
     if !output.status.success() {
         tracing::warn!(error = %String::from_utf8_lossy(&output.stderr), "GitHub update request failed");
         return Err("无法读取 GitHub Release，请检查网络连接后重试".into());
@@ -137,15 +149,31 @@ pub fn download(update: Update) -> Result<StagedUpdate, String> {
         .prefix(".gimage-update-")
         .tempdir_in(parent)
         .map_err(|error| format!("程序目录不可写：{error}"))?;
-    let output = powershell(r#"
+    let output = powershell(concat!(
+        include_str!("../../scripts/update-http.ps1"),
+        include_str!("../../scripts/update-sha256.ps1"), r#"
         $ErrorActionPreference = 'Stop'
-        Invoke-WebRequest -UseBasicParsing -TimeoutSec 90 -MaximumRedirection 5 -Uri $env:GIMAGE_UPDATE_URL -OutFile $env:GIMAGE_UPDATE_FILE
-        $file = Get-Item -LiteralPath $env:GIMAGE_UPDATE_FILE
-        if ($file.Length -ne [long]$env:GIMAGE_UPDATE_SIZE) { throw 'Unexpected update file size' }
-        if ((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -ine $env:GIMAGE_UPDATE_SHA256) {
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        $size = [long]$env:GIMAGE_UPDATE_SIZE
+        $response = Open-UpdateResponse $env:GIMAGE_UPDATE_URL 20000
+        try {
+            $inputStream = $response.GetResponseStream()
+            $outputStream = [IO.File]::Open($env:GIMAGE_UPDATE_FILE, [IO.FileMode]::CreateNew)
+            try {
+                $buffer = [byte[]]::new(65536)
+                while (($count = $inputStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                    if ($timer.Elapsed.TotalSeconds -gt 90 -or $outputStream.Length + $count -gt $size) {
+                        throw 'Update download exceeded its time or size limit.'
+                    }
+                    $outputStream.Write($buffer, 0, $count)
+                }
+                if ($outputStream.Length -ne $size) { throw 'Unexpected update file size.' }
+            } finally { $outputStream.Dispose() }
+        } finally { $response.Dispose() }
+        if ((Get-UpdateSha256 $env:GIMAGE_UPDATE_FILE) -ine $env:GIMAGE_UPDATE_SHA256) {
             throw 'Update SHA-256 verification failed'
         }
-    "#)?.env("GIMAGE_UPDATE_URL", update.url)
+    "#))?.env("GIMAGE_UPDATE_URL", update.url)
         .env("GIMAGE_UPDATE_FILE", directory.path().join("replacement.exe"))
         .env("GIMAGE_UPDATE_SIZE", update.size.to_string())
         .env("GIMAGE_UPDATE_SHA256", &update.sha256)
@@ -163,15 +191,18 @@ pub fn download(update: Update) -> Result<StagedUpdate, String> {
 
 impl StagedUpdate {
     pub fn launch(self) -> Result<(), String> {
-        powershell(include_str!("../../scripts/apply-update.ps1"))?
-            .env("GIMAGE_UPDATE_PARENT", std::process::id().to_string())
-            .env("GIMAGE_UPDATE_DIRECTORY", self.directory.path())
-            .env("GIMAGE_UPDATE_TARGET", &self.executable)
-            .env("GIMAGE_UPDATE_SHA256", &self.sha256)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|error| format!("无法启动更新程序：{error}"))?;
+        powershell(concat!(
+            include_str!("../../scripts/update-sha256.ps1"),
+            include_str!("../../scripts/apply-update.ps1")
+        ))?
+        .env("GIMAGE_UPDATE_PARENT", std::process::id().to_string())
+        .env("GIMAGE_UPDATE_DIRECTORY", self.directory.path())
+        .env("GIMAGE_UPDATE_TARGET", &self.executable)
+        .env("GIMAGE_UPDATE_SHA256", &self.sha256)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("无法启动更新程序：{error}"))?;
         let _ = self.directory.keep();
         Ok(())
     }

@@ -17,7 +17,7 @@ try {
         throw 'GImage did not exit before the update timeout.'
     }
     $parentExited = $true
-    if ((Get-FileHash -LiteralPath $replacement -Algorithm SHA256).Hash -ine $env:GIMAGE_UPDATE_SHA256) {
+    if ((Get-UpdateSha256 $replacement) -ine $env:GIMAGE_UPDATE_SHA256) {
         throw 'Update SHA-256 verification failed.'
     }
     for ($attempt = 1; ; $attempt++) {
@@ -40,6 +40,13 @@ try {
         try {
             [IO.File]::Replace($backup, $target, $failed)
             $swapped = $false
+        } catch {
+            $reason += [Environment]::NewLine + "Previous executable: $backup"
+        }
+    }
+    if (!$swapped -and ![IO.File]::Exists($target) -and [IO.File]::Exists($backup)) {
+        try {
+            [IO.File]::Move($backup, $target)
         } catch {
             $reason += [Environment]::NewLine + "Previous executable: $backup"
         }
