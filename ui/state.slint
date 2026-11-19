@@ -1,0 +1,323 @@
+// Central UI state. Pages bind to these properties directly, so Rust only has
+// to touch the global (ui.global::<App>()) instead of drilling dozens of props.
+
+export struct ImageCell {
+    id: int,
+    name: string,
+    marked: bool,
+    thumb: image,
+    /// 0 = loading, 1 = ready, 2 = failed/unreadable
+    state: int,
+    favorite: bool,
+}
+
+export struct GridRow {
+    /// At most `App.columns` entries.
+    cells: [ImageCell],
+}
+
+export struct ConvertRow {
+    name: string,
+    path: string,
+}
+export struct RenameRow {
+    original: string,
+    result: string,
+    changed: bool,
+    path: string,
+}
+
+export struct TaskRow {
+    id: int,
+    title: string,
+    detail: string,
+    status: string,
+    progress: float,
+    done: int,
+    total: int,
+    failed: int,
+    /// 0 queued, 1 running, 2 done, 3 partial, 4 failed, 5 canceled
+    state: int,
+    cancelable: bool,
+    retryable: bool,
+}
+
+export struct FolderRow {
+    id: int,
+    name: string,
+    path: string,
+    count: int,
+}
+
+export struct FormatChip {
+    label: string,
+    active: bool,
+}
+
+export struct FormatOption {
+    label: string,
+}
+
+export global App {
+    // ---- navigation -------------------------------------------------------
+    in-out property <int> page: 0;
+    callback page-requested(int);
+    in-out property <bool> fullscreen: false;
+    in-out property <bool> preview-chrome: true;
+    in-out property <float> dpi-scale: 1;
+    in-out property <length> window-width: 1360px;
+    in-out property <length> window-height: 860px;
+    callback exit-requested();
+
+    // ---- library ----------------------------------------------------------
+    in-out property <string> folder-name: "未打开文件夹";
+    in-out property <string> folder-path: "";
+    in-out property <bool> temporary-browser: false;
+    out property <bool> has-browser-source: folder-path != "" || temporary-browser;
+    in-out property <bool> browser-left-open: true;
+    in-out property <bool> browser-right-open: true;
+    in-out property <bool> scanning: false;
+    in-out property <string> scan-status: "选择一个文件夹开始浏览";
+    in-out property <int> scan-depth-limit: 5;
+    in-out property <int> scan-depth-found: -1;
+    in-out property <string> search-text: "";
+    in-out property <int> sort-index: 0;
+    in-out property <bool> sort-descending: false;
+    in-out property <bool> favorites-only: false;
+    in-out property <int> columns: 4;
+    in-out property <[GridRow]> grid-rows: [];
+    in-out property <[FolderRow]> recent-folders: [];
+    in-out property <[FormatChip]> format-chips: [];
+    in-out property <int> total-images: 0;
+    in-out property <int> loaded-images: 0;
+    in-out property <bool> loading-more: false;
+    in-out property <bool> can-load-more: false;
+    in-out property <string> library-stats: "";
+
+    // ---- selection / inspector -------------------------------------------
+    in-out property <int> selected-id: -1;
+    in-out property <int> marked-count: 0;
+    in-out property <string> sel-name: "";
+    in-out property <string> sel-dir: "";
+    in-out property <string> sel-path: "";
+    in-out property <string> sel-format: "";
+    in-out property <string> sel-dims: "";
+    in-out property <string> sel-size: "";
+    in-out property <string> sel-modified: "";
+    in-out property <string> sel-status: "";
+    in-out property <bool> sel-favorite: false;
+    in-out property <bool> sel-missing: false;
+    in-out property <image> sel-thumb;
+
+    // ---- preview ----------------------------------------------------------
+    in-out property <int> preview-id: -1;
+    in-out property <image> preview-image;
+    in-out property <int> preview-w: 0;
+    in-out property <int> preview-h: 0;
+    in-out property <int> preview-source-w: 0;
+    in property <int> preview-base-edge: 1600;
+    in-out property <int> preview-source-h: 0;
+    in-out property <bool> preview-loading: false;
+    in-out property <string> preview-title: "预览";
+    in-out property <int> preview-pos: 0;
+    in-out property <int> preview-total: 0;
+    in-out property <bool> exif-open: false;
+    in-out property <string> exif-text: "";
+    callback exif-requested();
+    callback preview-detail-changed(bool);
+
+    // ---- editor -----------------------------------------------------------
+    in-out property <int> edit-id: -1;
+    in-out property <image> edit-image;
+    in-out property <int> edit-w: 0;
+    in-out property <int> edit-h: 0;
+    in-out property <bool> edit-loading: false;
+    in-out property <bool> edit-dirty: false;
+    in-out property <bool> edit-saving: false;
+    in-out property <float> exposure: 0;
+    in-out property <float> contrast: 0;
+    in-out property <float> saturation: 0;
+    in-out property <float> temperature: 0;
+    in-out property <int> rotation: 0;
+    in-out property <bool> flip-h: false;
+    in-out property <bool> flip-v: false;
+    in-out property <bool> has-crop: false;
+    in-out property <bool> crop-mode: false;
+    in-out property <bool> can-undo: false;
+    in-out property <bool> can-redo: false;
+    in-out property <string> edit-info: "";
+    in-out property <int> mark-tool: 0;
+    in-out property <int> mark-color: 0;
+    in-out property <color> mark-ink: #fa4545;
+    in-out property <int> mark-style: 0;
+    in-out property <int> mark-shape: 1;
+    in-out property <int> mark-width: 5;
+    in-out property <string> mark-text: "";
+    in-out property <string> mark-draft: "";
+    in-out property <bool> mark-can-finish: false;
+    out property <[color]> mark-palette: [#fa4545, #ffd450, #54dc91, #58aaff, #ffffff, #1b1b1b];
+
+    // ---- tasks ------------------------------------------------------------
+    in-out property <[TaskRow]> tasks: [];
+    in-out property <int> active-tasks: 0;
+
+    // ---- settings ---------------------------------------------------------
+    in-out property <bool> settings-dark: true;
+    in-out property <int> settings-thumb-px: 320;
+    in-out property <int> settings-concurrency: 2;
+    in-out property <int> settings-mem-mb: 24;
+    in-out property <int> settings-disk-mb: 128;
+    in-out property <bool> settings-recursive: true;
+    in-out property <bool> settings-hidden: false;
+    in-out property <bool> settings-low-power: false;
+    in-out property <int> context-browse: 0;
+    in-out property <int> context-convert: 0;
+    in-out property <int> context-rename: 1;
+    in-out property <int> settings-context-browse: 0;
+    in-out property <int> settings-context-convert: 0;
+    in-out property <int> settings-context-rename: 1;
+    in-out property <bool> settings-explorer-menu: false;
+    in-out property <string> cache-stats: "";
+    in-out property <string> db-stats: "";
+    in-out property <string> engine-info: "";
+    in-out property <string> engine-detail: "";
+    in-out property <string> version-info: "";
+
+    // ---- export dialog ----------------------------------------------------
+    in-out property <bool> export-open: false;
+    in-out property <[string]> export-formats: ["JPEG", "PNG", "WebP"];
+    in-out property <int> export-format-index: 0;
+    in-out property <float> export-quality: 0.9;
+    in-out property <bool> export-resize: false;
+    in-out property <int> export-max-w: 1920;
+    in-out property <int> export-max-h: 1080;
+    in-out property <int> export-policy: 0;
+    in-out property <int> export-target-count: 0;
+    in-out property <string> export-hint: "";
+    in-out property <[ConvertRow]> convert-files: [];
+    in-out property <int> convert-index: -1;
+    in-out property <bool> convert-selected-only: false;
+    in-out property <bool> convert-loading: false;
+    in-out property <string> convert-error: "";
+    in-out property <image> convert-preview;
+    in-out property <string> convert-preview-status: "";
+    in-out property <string> convert-output-name: "";
+    in-out property <string> convert-directory: "";
+    in-out property <string> convert-prefix: "";
+    in-out property <int> convert-rotation: 0;
+    in-out property <float> convert-quality: 0.9;
+    in-out property <int> convert-policy: 0;
+    in-out property <int> convert-resize-mode: 0;
+    in-out property <int> convert-max-w: 1920;
+    in-out property <int> convert-max-h: 1080;
+    in property <[string]> resolution-presets: [];
+
+    // ---- rename dialog ----------------------------------------------------
+    in-out property <[RenameRow]> rename-rows: [];
+    in-out property <bool> rename-loading: false;
+    in-out property <bool> rename-preview-pending: false;
+    in-out property <string> rename-error: "";
+    in-out property <bool> rename-regex: false;
+    in-out property <bool> rename-numbered: false;
+    in-out property <int> rename-changed-count: 0;
+    in-out property <string> rename-prefix: "";
+    in-out property <string> rename-suffix: "";
+    in-out property <string> rename-extension: "";
+    in-out property <string> rename-find: "";
+    in-out property <string> rename-replace: "";
+    in-out property <string> rename-start: "1";
+    in-out property <int> rename-sort: 0;
+    in-out property <bool> rename-sort-descending: false;
+    in-out property <int> rename-padding: 3;
+    in-out property <int> rename-target-count: 0;
+
+    // ---- toast ------------------------------------------------------------
+    in-out property <string> toast-message: "";
+    in-out property <bool> toast-error: false;
+
+    // ---- generic confirmation --------------------------------------------
+    in-out property <bool> confirm-open: false;
+    in-out property <string> confirm-title: "";
+    in-out property <string> confirm-body: "";
+    in-out property <string> confirm-label: "继续";
+    in-out property <bool> confirm-danger: false;
+    in-out property <bool> confirm-discard: false;
+
+    // ---- callbacks --------------------------------------------------------
+    callback open-folder();
+    callback open-image();
+    callback open-folder-path(string);
+    callback refresh();
+    callback search-changed(string);
+    callback sort-changed(int, bool);
+    callback favorites-filter-changed(bool);
+    callback columns-changed(int);
+    callback format-chip-clicked(string);
+    callback load-more();
+    callback browser-viewport(int, int);
+    callback cell-clicked(int, int);
+    callback clear-marked();
+    callback select-all();
+    callback extend-marked(int);
+    callback scan-depth-changed(int);
+    callback cell-double-clicked(int);
+    callback star-clicked(int);
+    callback reveal-in-explorer(int);
+    callback file-action(int, string);
+    callback folder-action(string, string);
+    callback copy-text(string);
+    callback mark-tool-changed(int);
+    callback mark-event(int, float, float, float, float, bool);
+    callback choose-mark-color();
+    callback prev-image();
+    callback next-image();
+
+    callback edit-param-changed(string, float);
+    callback rotate-cw();
+    callback rotate-ccw();
+    callback flip-horizontal();
+    callback flip-vertical();
+    callback apply-crop(float, float, float, float);
+    callback clear-crop();
+    callback crop-preset(int);
+    callback toggle-crop-mode();
+    callback reset-edits();
+    callback save-edit();
+    callback undo();
+    callback redo();
+    callback export-current();
+
+    callback open-export();
+    callback open-batch-export();
+    callback convert-select(int);
+    callback convert-changed();
+    callback convert-pick-folder();
+    callback convert-reset-folder();
+    callback convert-open-folder();
+    callback convert-start();
+    callback convert-preset(int);
+    callback export-format-changed(int);
+    callback export-confirm(string, int, int, int, int);
+    callback open-rename();
+    callback rename-changed();
+    callback rename-add-files();
+    callback rename-apply();
+
+    callback task-cancel(int);
+    callback task-retry(int);
+    callback tasks-clear-finished();
+
+    callback theme-toggled(bool);
+    callback settings-apply();
+    callback cache-clear();
+    callback open-data-folder();
+    callback confirm-accepted();
+    callback file-associations();
+    in-out property <bool> update-busy: false;
+    in-out property <string> update-status: "";
+    callback check-updates();
+    callback confirm-discarded();
+    callback confirm-canceled();
+
+    callback toast-shown(string, bool);
+}

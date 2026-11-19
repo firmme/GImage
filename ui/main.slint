@@ -1,0 +1,130 @@
+import { Theme } from "theme.slint";
+import { App, ConvertRow, FolderRow, FormatChip, GridRow, ImageCell, RenameRow, TaskRow } from "state.slint";
+import { BrowserPage } from "browser.slint";
+import { PreviewPage } from "preview.slint";
+import { EditorPage } from "editor.slint";
+import { TasksPage } from "tasks.slint";
+import { SettingsPage } from "settings.slint";
+import { ConvertPage } from "convert.slint";
+import { RenamePage } from "rename.slint";
+import { ConfirmDialog, ExportDialog } from "dialogs.slint";
+
+import { TitleBar } from "titlebar.slint";
+
+component Toast inherits Rectangle {
+    in property <string> message;
+    in property <bool> error: false;
+
+    height: max(40px, toast-text.preferred-height + 18px);
+    border-radius: 8px;
+    background: root.error ? #3a1d1f : Theme.elevated;
+    border-width: 1px;
+    border-color: root.error ? Theme.danger : Theme.border-strong;
+
+    toast-text := Text {
+        x: 14px;
+        width: parent.width - 28px;
+        height: parent.height;
+        text: root.message;
+        color: root.error ? #ffb4b4 : Theme.text;
+        font-size: 12px;
+        vertical-alignment: center;
+        wrap: word-wrap;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { App.toast-message = ""; }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "GImage · 图像工具箱";
+    icon: @image-url("assets/gimage.png");
+    no-frame: true;
+    resize-border-width: root.window-maximized || App.fullscreen ? 0px : 6px;
+    preferred-width: 1360px;
+    preferred-height: 860px;
+    min-width: 940px;
+    min-height: 600px;
+    background: Theme.bg;
+    default-font-family: Theme.font;
+    default-font-size: 13px;
+    changed width => { App.window-width = root.width; }
+    changed height => { App.window-height = root.height; }
+
+    in property <bool> window-maximized: false;
+    callback minimize-window();
+    callback toggle-maximize();
+
+    callback toggle-fullscreen();
+    forward-focus: window-keys;
+    window-keys := FocusScope {
+        key-pressed(event) => {
+            if (App.page == 0 && App.marked-count > 0 && event.text == Key.Escape) {
+                App.clear-marked();
+                return accept;
+            }
+            if ((App.page == 1 && event.text == Key.F11)
+                || (App.fullscreen && event.text == Key.Escape)) {
+                root.toggle-fullscreen();
+                return accept;
+            }
+            if (event.modifiers.control && (event.text == "o" || event.text == "O")) {
+                App.open-image();
+                return accept;
+            }
+            if (App.page == 2 && event.modifiers.control && (event.text == "s" || event.text == "S")) {
+                App.save-edit();
+                return accept;
+            }
+            return reject;
+        }
+
+    app-root := Rectangle {
+        background: Theme.bg;
+        VerticalLayout {
+            if !App.fullscreen: TitleBar {
+                maximized: root.window-maximized;
+                minimize => { root.minimize-window(); }
+                maximize => { root.toggle-maximize(); }
+            }
+            if !App.fullscreen && App.page != 1: Rectangle { height: 1px; background: Theme.border; }
+            if App.page == 0: BrowserPage { vertical-stretch: 1; }
+            if App.page == 1: PreviewPage {
+                vertical-stretch: 1;
+                fullscreen-requested => { root.toggle-fullscreen(); }
+            }
+            if App.page == 2: EditorPage { vertical-stretch: 1; }
+            if App.page == 3: TasksPage { vertical-stretch: 1; }
+            if App.page == 4: SettingsPage { vertical-stretch: 1; }
+            if App.page == 5: ConvertPage { vertical-stretch: 1; }
+            if App.page == 6: RenamePage { vertical-stretch: 1; }
+        }
+        if App.fullscreen && App.preview-chrome: TitleBar {
+            x: 0;
+            y: 0;
+            width: parent.width;
+        }
+
+        if App.export-open: ExportDialog {
+            width: app-root.width;
+            height: app-root.height;
+        }
+        if App.confirm-open: ConfirmDialog {
+            width: app-root.width;
+            height: app-root.height;
+        }
+        if App.toast-message != "": Toast {
+            width: min(self.error ? 760px : 560px, app-root.width - 48px);
+            x: (app-root.width - self.width) / 2;
+            y: app-root.height - self.height - 18px;
+            message: App.toast-message;
+            error: App.toast-error;
+        }
+    }
+    }
+}
+
+export { App, ImageCell, GridRow, TaskRow, FolderRow, FormatChip, ConvertRow, RenameRow }
+export { Theme }

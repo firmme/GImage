@@ -1,0 +1,247 @@
+import { Theme } from "theme.slint";
+import { App } from "state.slint";
+import {
+    AppButton, AppSlider, AppToggle, Divider, HelpMark, SectionTitle, Segmented, Stepper, TextField,
+} from "widgets.slint";
+
+/// Centered modal panel over a dimmed scrim. Content children are inserted into
+/// the padded vertical layout of the panel.
+component DialogShell inherits Rectangle {
+    in property <length> panel-width: 520px;
+    callback dismissed();
+
+    background: #00000099;
+
+    scrim-ta := TouchArea {
+        clicked => { root.dismissed(); }
+    }
+
+    HorizontalLayout {
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: root.panel-width;
+                background: Theme.surface;
+                border-radius: Theme.radius-lg;
+                border-width: 1px;
+                border-color: Theme.border-strong;
+
+                // Absorbs clicks that miss interactive content, so the scrim
+                // behind the panel never closes the dialog.
+                block-ta := TouchArea {}
+
+                VerticalLayout {
+                    padding: 20px;
+                    spacing: 14px;
+                    @children
+                }
+            }
+        }
+    }
+}
+
+component DialogHeader inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> tip: "";
+    height: 26px;
+    spacing: 8px;
+    alignment: start;
+    Text {
+        text: root.title;
+        color: Theme.text;
+        font-size: 16px;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+    if root.tip != "": HelpMark { tip: root.tip; }
+}
+
+export component ExportDialog inherits DialogShell {
+    panel-width: 540px;
+    dismissed => { App.export-open = false; }
+
+    DialogHeader {
+        title: "导出副本";
+    }
+
+    HorizontalLayout {
+        spacing: 8px;
+        Text {
+            text: "目标";
+            color: Theme.text-dim;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+        Text {
+            text: "\{App.export-target-count} 张图片";
+            color: Theme.text;
+            font-size: 12px;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Text {
+            text: App.export-hint;
+            color: Theme.text-dim;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+    }
+
+    Divider {}
+
+    SectionTitle { text: "格式"; height: 16px; }
+    Segmented {
+        options: App.export-formats;
+        current: App.export-format-index;
+        changed(i) => {
+            App.export-format-index = i;
+            App.export-format-changed(i);
+        }
+    }
+
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            Text {
+                text: "质量";
+                color: Theme.text-muted;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: "\{round(App.export-quality * 100)}";
+                color: Theme.text-dim;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
+        AppSlider {
+            value <=> App.export-quality;
+            min-value: 0.1;
+            max-value: 1;
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 8px;
+        Text {
+            text: "调整尺寸";
+            color: Theme.text;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+        Rectangle { horizontal-stretch: 1; }
+        AppToggle { checked <=> App.export-resize; }
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        Text {
+            text: "最长边不超过";
+            color: Theme.text-muted;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+        Stepper {
+            min-value: 64;
+            max-value: 20000;
+            step: 64;
+            value <=> App.export-max-w;
+            enabled: App.export-resize;
+        }
+        Text {
+            text: "×";
+            color: Theme.text-dim;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+        Stepper {
+            min-value: 64;
+            max-value: 20000;
+            step: 64;
+            value <=> App.export-max-h;
+            enabled: App.export-resize;
+        }
+        Rectangle { horizontal-stretch: 1; }
+    }
+
+    Divider {}
+
+    SectionTitle { text: "同名文件处理"; height: 16px; }
+    Segmented {
+        options: ["自动重命名", "跳过已存在", "覆盖（需确认）"];
+        current: App.export-policy;
+        changed(i) => { App.export-policy = i; }
+    }
+    if App.export-policy == 2: Text {
+        text: "⚠ 覆盖会替换目标位置已存在的文件，但绝不会改动源图；确认后才会执行。";
+        color: Theme.warning;
+        font-size: 11px;
+        wrap: word-wrap;
+    }
+
+    HorizontalLayout {
+        spacing: 8px;
+        Rectangle { horizontal-stretch: 1; }
+        AppButton {
+            text: "取消";
+            ghost: true;
+            clicked => { App.export-open = false; }
+        }
+        AppButton {
+            text: "开始导出";
+            icon: "export";
+            primary: true;
+            clicked => {
+                App.export-confirm(
+                    App.export-formats[App.export-format-index],
+                    round(App.export-quality * 100),
+                    App.export-resize ? App.export-max-w : 0,
+                    App.export-resize ? App.export-max-h : 0,
+                    App.export-policy
+                );
+            }
+        }
+    }
+}
+
+
+export component ConfirmDialog inherits DialogShell {
+    panel-width: 440px;
+    dismissed => { App.confirm-canceled(); }
+
+    Text {
+        text: App.confirm-title;
+        color: Theme.text;
+        font-size: 15px;
+        font-weight: 600;
+    }
+    Text {
+        text: App.confirm-body;
+        color: Theme.text-muted;
+        font-size: 12px;
+        wrap: word-wrap;
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        Rectangle { horizontal-stretch: 1; }
+        AppButton {
+            text: "取消";
+            ghost: true;
+            clicked => { App.confirm-canceled(); }
+        }
+        if App.confirm-discard: AppButton {
+            text: "不保存";
+            danger: true;
+            clicked => { App.confirm-discarded(); }
+        }
+        AppButton {
+            text: App.confirm-label;
+            danger: App.confirm-danger;
+            primary: App.confirm-danger || App.confirm-discard;
+            clicked => { App.confirm-accepted(); }
+        }
+    }
+}

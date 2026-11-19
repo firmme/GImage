@@ -1,0 +1,461 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { App } from "state.slint";
+import {
+    AppButton, Divider, EmptyHint, FloatSlider, IconButton, SectionTitle, Stepper, TextField,
+} from "widgets.slint";
+
+export component EditorPage inherits Rectangle {
+    background: Theme.bg;
+
+    property <float> fit: min(canvas.width / max(App.edit-w * 1px, 1px), canvas.height / max(App.edit-h * 1px, 1px));
+    property <length> dw: App.edit-w * root.fit * 1px;
+    property <length> dh: App.edit-h * root.fit * 1px;
+    property <length> ix: (canvas.width - root.dw) / 2;
+    property <length> iy: (canvas.height - root.dh) / 2;
+
+    // Crop drag state, normalised to the displayed image.
+    property <float> ca-x: 0;
+    property <float> ca-y: 0;
+    property <float> cb-x: 0;
+    property <float> cb-y: 0;
+    property <bool> cropping: false;
+    property <float> cx: min(ca-x, cb-x);
+    property <float> cy: min(ca-y, cb-y);
+    property <float> cw: abs(cb-x - ca-x);
+    property <float> ch: abs(cb-y - ca-y);
+
+    property <int> edit-key: App.edit-id;
+
+    changed edit-key => {
+        cropping = false;
+        ca-x = 0;
+        ca-y = 0;
+        cb-x = 0;
+        cb-y = 0;
+    }
+
+    forward-focus: editor-keys;
+    editor-keys := FocusScope {
+        key-pressed(event) => {
+            if (event.modifiers.control && (event.text == "z" || event.text == "Z")) {
+                if (event.modifiers.shift) { App.redo(); } else { App.undo(); }
+                return accept;
+            }
+            if (event.modifiers.control && (event.text == "y" || event.text == "Y")) {
+                App.redo();
+                return accept;
+            }
+            if (event.text == Key.Escape && App.mark-tool > 0) {
+                App.mark-event(3, 0, 0, 0, 0, false);
+                return accept;
+            }
+            if (event.text == Key.Return && App.mark-can-finish) {
+                App.mark-event(4, 0, 0, root.dw / 1px, root.dh / 1px, false);
+                return accept;
+            }
+            return reject;
+        }
+    VerticalLayout {
+        if App.edit-id >= 0: Rectangle {
+            height: 44px;
+            background: Theme.surface;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 12px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 5px;
+                Text {
+                    text: "标注";
+                    color: Theme.text-muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+                for tool[index] in [
+                    { icon: "pen", tip: "签字笔" },
+                    { icon: "highlight", tip: "荧光笔" },
+                    { icon: "line", tip: "直线" },
+                    { icon: "arrow", tip: "箭头" },
+                    { icon: "polygon", tip: "形状与多边形" },
+                    { icon: "mosaic", tip: "马赛克：拖动选择区域" },
+                    { icon: "text", tip: "文字：输入内容后，点击图片放置" },
+                    { icon: "eraser", tip: "橡皮：擦除经过的整条标注" },
+                ]: IconButton {
+                    icon: tool.icon;
+                    tip: tool.tip;
+                    active: App.mark-tool == index + 1;
+                    clicked => { App.mark-tool-changed(index + 1); }
+                }
+                if App.mark-tool > 0: Rectangle { width: 1px; background: Theme.border; }
+                for swatch[index] in (App.mark-tool > 0 && App.mark-tool != 6 && App.mark-tool != 8 ? App.mark-palette : []): Rectangle {
+                        width: 24px;
+                        Rectangle {
+                            x: 3px;
+                            y: (parent.height - 18px) / 2;
+                            width: 18px;
+                            height: 18px;
+                            border-width: 2px;
+                            border-radius: 9px;
+                            background: swatch;
+                            border-color: App.mark-color == index ? Theme.focus : Theme.border-strong;
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { App.mark-color = index; App.mark-ink = swatch; }
+                        }
+                        accessible-role: button;
+                        accessible-label: ["红色", "黄色", "绿色", "蓝色", "白色", "黑色"][index];
+                        accessible-action-default => { App.mark-color = index; App.mark-ink = swatch; }
+                    }
+                if App.mark-tool > 0 && App.mark-tool != 6 && App.mark-tool != 8: color-picker := Rectangle {
+                    width: 30px;
+                    IconButton {
+                        side: 30px;
+                        icon: "chevron-down";
+                        tip: "自定义颜色";
+                        active: App.mark-color == -1;
+                        clicked => { App.choose-mark-color(); }
+                    }
+                    Rectangle {
+                        x: 3px;
+                        y: parent.height - 6px;
+                        width: 24px;
+                        height: 2px;
+                        background: App.mark-ink;
+                    }
+                }
+                if App.mark-tool == 3 || App.mark-tool == 4: Rectangle {
+                    width: 74px;
+                    AppButton {
+                        width: parent.width;
+                        compact: true;
+                        text: ["实线", "虚线", "点线", "波浪线"][App.mark-style] + " ▾";
+                        clicked => { stroke-menu.show({x: 0px, y: parent.height}); }
+                    }
+                    stroke-menu := ContextMenuArea {
+                        Menu {
+                            for style[index] in ["实线", "虚线", "点线", "波浪线"]: MenuItem {
+                                title: style;
+                                activated => { App.mark-style = index; }
+                            }
+                        }
+                    }
+                }
+                if App.mark-tool == 5: Rectangle {
+                    width: 104px;
+                    AppButton {
+                        width: parent.width;
+                        compact: true;
+                        text: ["自由多边形", "矩形", "椭圆", "三角形", "五边形", "六边形"][App.mark-shape] + " ▾";
+                        tip: App.mark-shape == 0 ? "点选顶点，回车或右键闭合" : "拖动绘制，按 Shift 约束为正形";
+                        clicked => { shape-menu.show({x: 0px, y: parent.height}); }
+                    }
+                    shape-menu := ContextMenuArea {
+                        Menu {
+                            for shape[index] in ["自由多边形", "矩形", "椭圆", "三角形", "五边形", "六边形"]: MenuItem {
+                                title: shape;
+                                activated => {
+                                    App.mark-shape = index;
+                                    App.mark-event(3, 0, 0, 0, 0, false);
+                                }
+                            }
+                        }
+                    }
+                }
+                if App.mark-tool > 0: Text {
+                    text: App.mark-tool == 7 ? "字号" : App.mark-tool == 6 ? "块大小" : "粗细";
+                    color: Theme.text-muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+                if App.mark-tool > 0: Stepper {
+                    width: 96px;
+                    min-value: 1;
+                    max-value: 72;
+                    step: 1;
+                    value <=> App.mark-width;
+                }
+                if App.mark-tool == 7: TextField {
+                    width: 176px;
+                    placeholder: "输入标注文字";
+                    text <=> App.mark-text;
+                }
+                if App.mark-tool == 5 && App.mark-shape == 0: AppButton {
+                    text: "闭合";
+                    icon: "check";
+                    enabled: App.mark-can-finish;
+                    clicked => { App.mark-event(4, 0, 0, root.dw / 1px, root.dh / 1px, false); }
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+        if App.edit-id >= 0: Rectangle { height: 1px; background: Theme.border; }
+
+        HorizontalLayout {
+            canvas := Rectangle {
+                horizontal-stretch: 1;
+                clip: true;
+                background: Theme.thumb-bg;
+
+                if App.edit-w > 0: Image {
+                    x: root.ix;
+                    y: root.iy;
+                    width: root.dw;
+                    height: root.dh;
+                    source: App.edit-image;
+                    image-fit: fill;
+                }
+
+                if App.edit-w > 0 && App.mark-draft != "": Path {
+                    x: root.ix;
+                    y: root.iy;
+                    width: root.dw;
+                    height: root.dh;
+                    viewbox-width: root.dw / 1px;
+                    viewbox-height: root.dh / 1px;
+                    commands: App.mark-draft;
+                    stroke: App.mark-tool == 6 ? Theme.focus : App.mark-ink;
+                    stroke-width: App.mark-tool == 6 ? 2px : App.mark-width * 1px;
+                    opacity: App.mark-tool == 2 ? 0.4 : 1.0;
+                    fill: App.mark-tool == 6 ? #85b7ff30 : transparent;
+                }
+
+                if App.edit-w > 0 && !App.crop-mode && !App.edit-saving && App.mark-tool > 0: drawing := TouchArea {
+                    x: root.ix;
+                    y: root.iy;
+                    width: root.dw;
+                    height: root.dh;
+                    mouse-cursor: crosshair;
+                    pointer-event(pe) => {
+                        if (pe.kind == PointerEventKind.cancel) {
+                            App.mark-event(3, 0, 0, 0, 0, false);
+                        } else if (pe.button == PointerEventButton.left && pe.kind == PointerEventKind.down) {
+                            editor-keys.focus();
+                            App.mark-event(0, self.mouse-x / self.width, self.mouse-y / self.height, self.width / 1px, self.height / 1px, pe.modifiers.shift);
+                        } else if (pe.button == PointerEventButton.left && pe.kind == PointerEventKind.up) {
+                            App.mark-event(2, self.mouse-x / self.width, self.mouse-y / self.height, self.width / 1px, self.height / 1px, pe.modifiers.shift);
+                        } else if (pe.button == PointerEventButton.right && pe.kind == PointerEventKind.up && App.mark-tool == 5 && App.mark-shape == 0) {
+                            App.mark-event(4, 0, 0, self.width / 1px, self.height / 1px, pe.modifiers.shift);
+                        } else if (pe.kind == PointerEventKind.move && (self.pressed || (App.mark-tool == 5 && App.mark-shape == 0))) {
+                            App.mark-event(1, self.mouse-x / self.width, self.mouse-y / self.height, self.width / 1px, self.height / 1px, pe.modifiers.shift);
+                        }
+                    }
+                }
+
+                if App.edit-w > 0 && cropping: Rectangle {
+                    x: root.ix + root.cx * root.dw;
+                    y: root.iy + root.cy * root.dh;
+                    width: root.cw * root.dw;
+                    height: root.ch * root.dh;
+                    border-width: 1px;
+                    border-color: #ffffff;
+                    background: #ffffff10;
+                    border-radius: 1px;
+                }
+
+                if App.edit-w > 0 && App.crop-mode: crop-ta := TouchArea {
+                    x: root.ix;
+                    y: root.iy;
+                    width: root.dw;
+                    height: root.dh;
+                    mouse-cursor: MouseCursor.crosshair;
+                    pointer-event(pe) => {
+                        if (pe.kind == PointerEventKind.down && pe.button == PointerEventButton.left) {
+                            root.cropping = true;
+                            root.ca-x = min(max(self.mouse-x / root.dw, 0), 1);
+                            root.ca-y = min(max(self.mouse-y / root.dh, 0), 1);
+                            root.cb-x = root.ca-x;
+                            root.cb-y = root.ca-y;
+                        } else if (pe.kind == PointerEventKind.up || pe.kind == PointerEventKind.cancel) {
+                            root.cropping = false;
+                            if (root.cw > 0.02 && root.ch > 0.02) {
+                                App.apply-crop(root.cx, root.cy, root.cw, root.ch);
+                            }
+                        }
+                    }
+                    moved => {
+                        if (root.cropping) {
+                            root.cb-x = min(max(self.mouse-x / root.dw, 0), 1);
+                            root.cb-y = min(max(self.mouse-y / root.dh, 0), 1);
+                        }
+                    }
+                }
+
+                if App.edit-loading: VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "正在应用编辑…";
+                        color: Theme.text-muted;
+                        font-size: 13px;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                if App.edit-id < 0: VerticalLayout {
+                    alignment: center;
+                    padding: 32px;
+                    EmptyHint {
+                        icon: "edit";
+                        title: "没有正在编辑的图片";
+                        body: "在浏览页双击一张图片，然后进入编辑。";
+                    }
+                }
+
+                if App.crop-mode: Rectangle {
+                    y: 12px;
+                    x: 12px;
+                    height: 30px;
+                    border-radius: 6px;
+                    background: #00000099;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        Text {
+                            text: "在图像上拖出裁剪区域，松开即应用";
+                            color: #ffffff;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            // Right panel
+            Rectangle {
+                width: 306px;
+                background: Theme.surface;
+                border-width: 1px;
+                border-color: Theme.border;
+
+                ScrollView {
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 12px;
+
+                        SectionTitle { text: "几何"; height: 16px; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            AppButton {
+                                text: "左转 90°";
+                                icon: "rotate-left";
+                                horizontal-stretch: 1;
+                                clicked => { App.rotate-ccw(); }
+                            }
+                            AppButton {
+                                text: "右转 90°";
+                                icon: "rotate-right";
+                                horizontal-stretch: 1;
+                                clicked => { App.rotate-cw(); }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            AppButton {
+                                text: "水平翻转";
+                                icon: "flip-x";
+                                horizontal-stretch: 1;
+                                clicked => { App.flip-horizontal(); }
+                            }
+                            AppButton {
+                                text: "垂直翻转";
+                                icon: "flip-y";
+                                horizontal-stretch: 1;
+                                clicked => { App.flip-vertical(); }
+                            }
+                        }
+
+                        Divider {}
+
+                        SectionTitle { text: "裁剪"; height: 16px; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            AppButton {
+                                text: "1:1";
+                                ghost: true;
+                                clicked => { App.crop-preset(0); }
+                            }
+                            AppButton {
+                                text: "16:9";
+                                ghost: true;
+                                clicked => { App.crop-preset(1); }
+                            }
+                            AppButton {
+                                text: "4:3";
+                                ghost: true;
+                                clicked => { App.crop-preset(2); }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            AppButton {
+                                text: App.crop-mode ? "取消裁剪" : "拖拽裁剪";
+                                icon: "crop";
+                                primary: App.crop-mode;
+                                clicked => { App.toggle-crop-mode(); }
+                            }
+                            AppButton {
+                                text: "清除裁剪";
+                                icon: "crop";
+                                ghost: true;
+                                enabled: App.has-crop;
+                                clicked => { App.clear-crop(); }
+                            }
+                        }
+
+                        Divider {}
+
+                        SectionTitle { text: "调色"; height: 16px; }
+                        FloatSlider {
+                            label: "曝光";
+                            min-value: -3;
+                            max-value: 3;
+                            value <=> App.exposure;
+                            display: "\{round(App.exposure * 100) / 100} EV";
+                            changed(v) => { App.edit-param-changed("exposure", v); }
+                            reset => { App.edit-param-changed("exposure", 0); }
+                        }
+                        FloatSlider {
+                            label: "对比度";
+                            min-value: -1;
+                            max-value: 1;
+                            value <=> App.contrast;
+                            display: "\{round(App.contrast * 100)}";
+                            changed(v) => { App.edit-param-changed("contrast", v); }
+                            reset => { App.edit-param-changed("contrast", 0); }
+                        }
+                        FloatSlider {
+                            label: "饱和度";
+                            min-value: -1;
+                            max-value: 1;
+                            value <=> App.saturation;
+                            display: "\{round(App.saturation * 100)}";
+                            changed(v) => { App.edit-param-changed("saturation", v); }
+                            reset => { App.edit-param-changed("saturation", 0); }
+                        }
+                        FloatSlider {
+                            label: "色温";
+                            min-value: -1;
+                            max-value: 1;
+                            value <=> App.temperature;
+                            display: "\{round(App.temperature * 100)}";
+                            changed(v) => { App.edit-param-changed("temperature", v); }
+                            reset => { App.edit-param-changed("temperature", 0); }
+                        }
+
+                        Divider {}
+
+                        Text {
+                            text: App.edit-info;
+                            color: Theme.text-dim;
+                            font-size: 11px;
+                            wrap: word-wrap;
+                        }
+
+                    }
+                }
+            }
+        }
+    }
+    }
+}

@@ -1,0 +1,63 @@
+[workspace]
+resolver = "3"
+members = [
+    "app",
+    "crates/core",
+    "crates/engine",
+    "crates/catalog",
+    "crates/cache",
+    "crates/task_queue",
+]
+
+[workspace.package]
+version = "0.1.1"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+
+[workspace.dependencies]
+gimage-core = { path = "crates/core" }
+gimage-engine = { path = "crates/engine" }
+gimage-catalog = { path = "crates/catalog" }
+gimage-cache = { path = "crates/cache" }
+gimage-task-queue = { path = "crates/task_queue" }
+
+anyhow = "1.0"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+walkdir = "2.5"
+rusqlite = { version = "0.43", features = ["bundled"] }
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+    "png",
+    "webp",
+    "gif",
+    "bmp",
+    "tiff",
+    "ico",
+] }
+kamadak-exif = "0.6"
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+
+# Development profile follows the spec: smaller target dir, faster linking.
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.dev.package.gimage-engine]
+opt-level = 2
+
+[profile.dev.package.image]
+opt-level = 2
+
+[profile.dev.package.zune-jpeg]
+opt-level = 2
+
+[profile.release]
+strip = "symbols"
+lto = "thin"
+codegen-units = 8

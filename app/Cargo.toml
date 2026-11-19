@@ -1,0 +1,52 @@
+[package]
+name = "gimage-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GImage native desktop application"
+repository = "https://github.com/firmme/GImage"
+
+[[bin]]
+name = "gimage"
+path = "src/main.rs"
+
+[dependencies]
+gimage-core.workspace = true
+gimage-engine.workspace = true
+gimage-catalog.workspace = true
+gimage-cache.workspace = true
+gimage-task-queue.workspace = true
+
+slint = { version = "1.19", features = ["image-default-formats", "unstable-winit-030"] }
+rfd = "0.18"
+notify = "8.2"
+time = { version = "0.3", features = ["local-offset", "formatting"] }
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+arboard = "3.7"
+serde.workspace = true
+serde_json.workspace = true
+base64 = "0.22"
+semver = "1"
+tempfile = "3"
+kamadak-exif.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Storage_FileSystem", "Win32_Storage_Xps",
+    "Win32_System_Com", "Win32_System_Registry", "Win32_System_SystemServices", "Win32_UI_Controls_Dialogs", "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(all(windows, target_env = "msvc"))'.dependencies]
+slint = { version = "1.19", features = ["renderer-skia"] }
+
+[dev-dependencies]
+i-slint-backend-testing = "=1.19.0"
+
+[build-dependencies]
+slint-build = "1.19"

@@ -1,0 +1,387 @@
+import { Theme } from "theme.slint";
+import { App } from "state.slint";
+import { FileMenu } from "context.slint";
+import { AppButton, EmptyHint, IconButton } from "widgets.slint";
+import { Icon } from "icons.slint";
+
+component ZoomField inherits Rectangle {
+    in property <int> percent: 100;
+    callback apply(float);
+    callback fit();
+    callback actual();
+    property <bool> typing: false;
+
+    width: 80px;
+    height: 27px;
+    border-radius: Theme.radius-sm;
+    border-width: 1px;
+    border-color: value.has-focus ? Theme.focus : Theme.border-strong;
+    background: Theme.surface;
+
+    function display-value() { value.text = "\{root.percent}"; }
+    changed percent => { if (!value.has-focus) { root.display-value(); } }
+
+    wheel := TouchArea {
+        scroll-event(event) => {
+            if (event.delta-y == 0px) { return reject; }
+            root.apply(root.percent + (event.delta-y > 0px ? 5 : -5));
+            root.typing = false;
+            root.display-value();
+            return accept;
+        }
+        field-area := ContextMenuArea {
+            x: 0px;
+            width: 52px;
+            height: parent.height;
+            Menu {
+                MenuItem { title: "剪切"; activated => { value.cut(); } }
+                MenuItem { title: "复制"; activated => { value.copy(); } }
+                MenuItem { title: "粘贴"; activated => { value.paste(); } }
+                MenuSeparator {}
+                MenuItem { title: "全选"; activated => { value.select-all(); } }
+            }
+            value := TextInput {
+                x: 4px;
+                width: 34px;
+                height: parent.height;
+                font-size: 13px;
+                color: Theme.text;
+                selection-background-color: Theme.accent;
+                selection-foreground-color: Theme.on-accent;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+                single-line: true;
+                input-type: number;
+                text: "\{root.percent}";
+                accessible-label: "缩放百分比";
+                accessible-value: self.text;
+                function commit() {
+                    if (root.typing && self.text.is-float() && self.text.to-float() > 0) {
+                        root.apply(self.text.to-float());
+                    }
+                    root.typing = false;
+                    root.display-value();
+                }
+                edited => { root.typing = true; }
+                accepted => { self.commit(); }
+                changed has-focus => {
+                    if (!self.has-focus) { self.commit(); }
+                }
+            }
+        }
+        Text {
+            x: 40px;
+            height: parent.height;
+            text: "%";
+            color: Theme.text-muted;
+            font-size: 13px;
+            vertical-alignment: center;
+        }
+        IconButton {
+            x: 55px;
+            y: 1px;
+            side: 25px;
+            icon: "chevron-down";
+            tip: "缩放选项";
+            clicked => { zoom-options.show({x: 0px, y: -216px}); }
+        }
+    }
+    zoom-options := ContextMenuArea {
+        Menu {
+            MenuItem { title: "适应窗口"; activated => { root.fit(); } }
+            MenuItem { title: "100% · 实际像素"; activated => { root.actual(); } }
+            MenuSeparator {}
+            for pct in [25, 50, 75, 125, 150, 200]: MenuItem {
+                title: "\{pct}%";
+                activated => { root.apply(pct); }
+            }
+        }
+    }
+}
+
+export component PreviewPage inherits Rectangle {
+    background: Theme.canvas;
+    callback fullscreen-requested();
+
+    property <bool> fit-mode: true;
+    property <float> fixed-scale: 1;
+    property <float> zoom: fit-mode ? fit-scale() : fixed-scale;
+    property <length> pan-x: 0px;
+    property <length> pan-y: 0px;
+    property <bool> dragging: false;
+    property <length> drag-x: 0px;
+    property <length> drag-y: 0px;
+    property <length> drag-pan-x: 0px;
+    property <length> drag-pan-y: 0px;
+    property <bool> immersive: App.fullscreen;
+    property <int> source-w: App.preview-source-w > 0 ? App.preview-source-w : App.preview-w;
+    property <int> source-h: App.preview-source-h > 0 ? App.preview-source-h : App.preview-h;
+    property <int> image-key: App.preview-id;
+    property <bool> useful-detail: !root.fit-mode && App.preview-w > 0
+        && max(root.source-w, root.source-h) > App.preview-base-edge
+        && root.zoom * App.dpi-scale * max(root.source-w, root.source-h) > App.preview-base-edge * 1.08;
+
+    changed image-key => { root.fit-image(); }
+    changed immersive => {
+        if (root.immersive) { root.reveal-chrome(false); }
+        else { chrome-timeout.stop(); }
+    }
+    changed useful-detail => { App.preview-detail-changed(root.useful-detail); }
+
+    pure function fit-scale() -> float {
+        if (root.source-w < 1 || root.source-h < 1) { return 1; }
+        return min((canvas.width - 16px) / (root.source-w * 1px),
+            (canvas.height - 16px) / (root.source-h * 1px));
+    }
+
+    function fit-image() {
+        root.fit-mode = true;
+        root.pan-x = 0px;
+        root.pan-y = 0px;
+    }
+
+    function zoom-at(next-scale: float, mx: length, my: length) {
+        if (App.preview-w <= 0) { return; }
+        let old = root.zoom;
+        let next = clamp(next-scale, min(0.01 / App.dpi-scale, root.fit-scale()), max(16 / App.dpi-scale, root.fit-scale()));
+        let cx = canvas.width / 2;
+        let cy = canvas.height / 2;
+        root.pan-x = mx - cx - (mx - cx - root.pan-x) * (next / old);
+        root.pan-y = my - cy - (my - cy - root.pan-y) * (next / old);
+        root.fixed-scale = next;
+        root.fit-mode = false;
+    }
+
+    function set-percent(percent: float) {
+        root.zoom-at(percent / 100 / App.dpi-scale, canvas.width / 2, canvas.height / 2);
+    }
+
+    function actual-size() {
+        root.set-percent(100);
+        root.pan-x = 0px;
+        root.pan-y = 0px;
+    }
+
+    function toggle-fit() {
+        if (root.fit-mode) { root.actual-size(); }
+        else { root.fit-image(); }
+    }
+
+    function toggle-exif() {
+        App.exif-open = !App.exif-open;
+        if (App.exif-open && App.exif-text == "正在读取…") { App.exif-requested(); }
+    }
+
+    function reveal-chrome(keep-open: bool) {
+        if (!App.fullscreen) { return; }
+        App.preview-chrome = true;
+        if (keep-open) {
+            chrome-timeout.stop();
+        } else {
+            chrome-timeout.start();
+            chrome-timeout.restart();
+        }
+    }
+
+    chrome-timeout := Timer {
+        interval: 2s;
+        running: false;
+        triggered => {
+            chrome-timeout.stop();
+            if (App.fullscreen) { App.preview-chrome = false; }
+        }
+    }
+
+    preview-keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.LeftArrow && App.preview-pos > 1) { App.prev-image(); return accept; }
+            if (event.text == Key.RightArrow && App.preview-pos < App.preview-total) { App.next-image(); return accept; }
+            return reject;
+        }
+        canvas := Rectangle {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: root.height - (App.fullscreen ? 0px : 36px);
+            clip: true;
+
+            if App.preview-w > 0: Image {
+                source: App.preview-image;
+                x: (canvas.width - self.width) / 2 + root.pan-x;
+                y: (canvas.height - self.height) / 2 + root.pan-y;
+                width: root.source-w * root.zoom * 1px;
+                height: root.source-h * root.zoom * 1px;
+                image-fit: fill;
+            }
+
+            if App.preview-loading: Text {
+                width: parent.width;
+                height: parent.height;
+                text: "正在载入…";
+                color: Theme.text-muted;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            if App.preview-id >= 0: file-menu := FileMenu {
+                file-id: App.preview-id;
+                width: parent.width;
+                height: parent.height;
+                TouchArea {
+                    mouse-cursor: root.dragging ? MouseCursor.grabbing : MouseCursor.default;
+                    pointer-event(pe) => {
+                        if (pe.kind == PointerEventKind.down && pe.button == PointerEventButton.right && App.preview-id >= 0) {
+                            file-menu.show-at(self.mouse-x, self.mouse-y);
+                        } else if (pe.kind == PointerEventKind.down && pe.button == PointerEventButton.left) {
+                            preview-keys.focus();
+                            root.dragging = true;
+                            root.drag-x = self.mouse-x;
+                            root.drag-y = self.mouse-y;
+                            root.drag-pan-x = root.pan-x;
+                            root.drag-pan-y = root.pan-y;
+                            root.reveal-chrome(true);
+                        } else if (pe.kind == PointerEventKind.up || pe.kind == PointerEventKind.cancel) {
+                            root.dragging = false;
+                            root.reveal-chrome(self.mouse-y < 44px || self.mouse-y > self.height - 40px);
+                        } else if (pe.kind == PointerEventKind.move) {
+                            root.reveal-chrome(root.dragging || self.mouse-y < 44px || self.mouse-y > self.height - 40px);
+                            if (root.dragging) {
+                                root.pan-x = root.drag-pan-x + self.mouse-x - root.drag-x;
+                                root.pan-y = root.drag-pan-y + self.mouse-y - root.drag-y;
+                            }
+                        }
+                    }
+                    double-clicked => { root.toggle-fit(); }
+                    scroll-event(event) => {
+                        if (event.delta-y == 0px) { return reject; }
+                        root.zoom-at(root.zoom * (event.delta-y > 0px ? 1.16 : 0.86), self.mouse-x, self.mouse-y);
+                        return accept;
+                    }
+                }
+            }
+            if App.preview-id < 0: VerticalLayout {
+                alignment: center;
+                spacing: 14px;
+                EmptyHint { title: "没有可预览的图片"; }
+                HorizontalLayout {
+                    alignment: center;
+                    AppButton {
+                        width: 148px;
+                        text: "打开图片…";
+                        icon: "folder";
+                        primary: true;
+                        clicked => { App.open-image(); }
+                    }
+                }
+            }
+
+            if App.exif-open: Rectangle {
+                x: 16px;
+                y: App.fullscreen ? 52px : 12px;
+                width: min(320px, parent.width - 32px);
+                height: exif-copy.preferred-height + 2px;
+                for offset in [-1, 1]: Text {
+                    x: exif-copy.x + offset * 1px;
+                    y: exif-copy.y + 1px;
+                    width: exif-copy.width;
+                    height: exif-copy.height;
+                    text: exif-copy.text;
+                    wrap: word-wrap;
+                    color: #000c;
+                    font-size: 13px;
+                }
+                exif-copy := Text {
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: self.preferred-height;
+                    text: App.exif-text;
+                    wrap: word-wrap;
+                    color: #fff;
+                    font-size: 13px;
+                }
+                ContextMenuArea {
+                    Menu { MenuItem { title: "复制 EXIF 信息"; activated => { App.copy-text(App.exif-text); } } }
+                }
+            }
+        }
+
+        if !App.fullscreen || App.preview-chrome: status-bar := Rectangle {
+            x: 0;
+            y: root.height - self.height;
+            width: root.width;
+            height: 36px;
+            background: App.fullscreen ? Theme.surface : Theme.canvas;
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                padding-top: 3px;
+                padding-bottom: 3px;
+                spacing: 4px;
+                IconButton {
+                    icon: "info";
+                    tip: App.exif-open ? "关闭 EXIF 信息" : "EXIF 信息";
+                    active: App.exif-open;
+                    enabled: App.preview-id >= 0;
+                    side: 29px;
+                    clicked => { root.toggle-exif(); }
+                }
+                IconButton {
+                    icon: "previous"; tip: "上一张"; side: 29px;
+                    enabled: App.preview-pos > 1;
+                    clicked => { App.prev-image(); }
+                }
+                Text {
+                    text: "\{App.preview-pos} / \{App.preview-total}";
+                    color: Theme.text;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                }
+                IconButton {
+                    icon: "next"; tip: "下一张"; side: 29px;
+                    enabled: App.preview-pos < App.preview-total;
+                    clicked => { App.next-image(); }
+                }
+                if App.preview-id >= 0: Text {
+                    text: App.sel-size + (root.source-w > 0 ? "   \{root.source-w} × \{root.source-h}" : "");
+                    color: Theme.text-muted;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                if App.preview-id >= 0: IconButton {
+                    icon: "star"; tip: "收藏"; side: 29px; active: App.sel-favorite;
+                    clicked => { App.star-clicked(App.preview-id); }
+                }
+                if App.preview-id >= 0: IconButton {
+                    icon: root.fit-mode ? "" : "fit";
+                    glyph: "1:1";
+                    tip: root.fit-mode ? "切换到 100% 实际像素" : "适应窗口";
+                    side: 29px;
+                    clicked => { root.toggle-fit(); }
+                }
+                if App.preview-id >= 0: ZoomField {
+                    percent: max(1, round(root.zoom * App.dpi-scale * 100));
+                    apply(percent) => { root.set-percent(percent); }
+                    actual => { root.actual-size(); }
+                    fit => { root.fit-image(); }
+                }
+                if App.preview-id >= 0: IconButton {
+                    icon: "plus"; tip: "放大"; side: 29px;
+                    clicked => { root.set-percent(root.zoom * App.dpi-scale * 120); }
+                }
+                if App.preview-id >= 0: IconButton {
+                    icon: "minus"; tip: "缩小"; side: 29px;
+                    clicked => { root.set-percent(root.zoom * App.dpi-scale * 83.33); }
+                }
+                IconButton {
+                    icon: App.fullscreen ? "fullscreen-exit" : "fullscreen";
+                    tip: App.fullscreen ? "退出全屏 · Esc" : "全屏 · F11";
+                    side: 29px;
+                    enabled: App.preview-id >= 0;
+                    clicked => { root.fullscreen-requested(); }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,10 @@
+[package]
+name = "gimage-task-queue"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Bounded worker pool with cooperative cancellation and progress events"
+
+[dependencies]
+gimage-core.workspace = true

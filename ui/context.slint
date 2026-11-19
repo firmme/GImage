@@ -1,0 +1,241 @@
+import { App } from "state.slint";
+import { Theme } from "theme.slint";
+import { Icon } from "icons.slint";
+
+export struct MenuCommand {
+    label: string,
+    icon: string,
+    action: string,
+    shown: bool,
+    divider: bool,
+}
+
+export component IconMenu inherits Rectangle {
+    in property <[MenuCommand]> commands;
+    in property <length> menu-width: 220px;
+    in property <int> shown-count: 0;
+    in property <int> overflow-count: 0;
+    in property <string> active-action: "";
+    in property <string> heading: "";
+    in property <[MenuCommand]> overflow;
+    callback chosen(string);
+    property <length> menu-x;
+    property <length> menu-y;
+    property <bool> showing-overflow: false;
+    property <length> anchor-x;
+    property <length> anchor-y;
+    property <length> menu-height: root.shown-count * 29px + 10px + (root.heading != "" ? 26px : 0px);
+    property <length> submenu-height: root.overflow-count * 29px + 10px;
+    property <bool> submenu-left: false;
+    property <length> menu-offset: root.submenu-left ? root.menu-width : 0px;
+    property <length> submenu-y: min(root.menu-height - 34px, max(0px, App.window-height - root.absolute-position.y - root.menu-y - root.submenu-height - 4px));
+
+    public function show-at(x: length, y: length) {
+        root.showing-overflow = false;
+        root.anchor-x = x;
+        root.anchor-y = y;
+        root.place-menu();
+        popup.show();
+    }
+
+    function place-menu() {
+        root.menu-x = clamp(root.absolute-position.x + root.anchor-x, 4px, max(4px, App.window-width - root.menu-width - 4px)) - root.absolute-position.x;
+        root.submenu-left = root.overflow-count > 0 && root.absolute-position.x + root.menu-x + 2 * root.menu-width > App.window-width - 4px;
+        if (root.submenu-left) {
+            root.menu-x = max(root.menu-x, 4px + root.menu-width - root.absolute-position.x);
+        }
+        root.menu-y = clamp(root.absolute-position.y + root.anchor-y, 4px, max(4px, App.window-height - max(root.menu-height, root.submenu-height) - 4px)) - root.absolute-position.y;
+    }
+
+    popup := PopupWindow {
+        x: root.menu-x - root.menu-offset;
+        y: root.menu-y;
+        width: root.overflow-count > 0 ? 2 * root.menu-width : root.menu-width;
+        height: max(root.menu-height, root.submenu-y + root.submenu-height);
+        close-policy: close-on-click-outside;
+        forward-focus: menu-focus;
+        menu-focus := FocusScope {
+            width: parent.width;
+            height: parent.height;
+            key-pressed(event) => {
+                if (event.text == Key.Escape) { popup.close(); return accept; }
+                return reject;
+            }
+            if root.overflow-count > 0: TouchArea {
+                width: parent.width;
+                height: parent.height;
+                clicked => { popup.close(); }
+            }
+            Rectangle {
+                x: root.menu-offset;
+                width: root.menu-width;
+                height: root.menu-height;
+                background: Theme.elevated;
+                border-radius: Theme.radius;
+                border-width: 1px;
+                border-color: Theme.border-strong;
+                VerticalLayout {
+                    padding: 5px;
+                    alignment: start;
+                    if root.heading != "": Rectangle {
+                        height: 26px;
+                        Text {
+                            x: 9px; width: parent.width - 18px; height: parent.height;
+                            text: root.heading; color: Theme.text-muted; font-size: 12px;
+                            vertical-alignment: center;
+                        }
+                        Rectangle { x: 8px; y: parent.height - 2px; width: parent.width - 16px; height: 1px; background: Theme.border-strong; }
+                    }
+                    for command in root.commands: command-row := Rectangle {
+                        visible: command.shown;
+                        height: command.shown ? 29px : 0px;
+                        border-radius: 4px;
+                        accessible-role: button;
+                        accessible-label: command.label;
+                        accessible-action-default => { command-row.invoke(); }
+                        function invoke() {
+                            if (command.action == "__submenu") {
+                                root.showing-overflow = true;
+                            } else {
+                                root.chosen(command.action);
+                                popup.close();
+                            }
+                        }
+                        if command.divider && command.shown: Rectangle {
+                            x: 8px; y: 1px; width: parent.width - 16px;
+                            height: 1px; background: Theme.border-strong;
+                        }
+                        Rectangle {
+                            y: command.divider ? 3px : 0px;
+                            width: parent.width;
+                            height: parent.height - self.y;
+                            border-radius: 4px;
+                            background: command-touch.has-hover || command-focus.has-focus
+                                || (command.action == "__submenu" && root.showing-overflow) ? Theme.hover
+                                : command.action == root.active-action ? Theme.accent-soft : transparent;
+                            HorizontalLayout {
+                                width: parent.width;
+                                height: parent.height;
+                                padding-left: 9px;
+                                padding-right: 7px;
+                                spacing: 9px;
+                                Rectangle {
+                                    width: 16px;
+                                    Icon { name: command.icon; size: 15px; y: (parent.height - self.height) / 2; }
+                                }
+                                Text {
+                                    text: command.label;
+                                    color: Theme.text;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                    horizontal-alignment: left;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+                                if command.action == "__submenu": Rectangle {
+                                    width: 16px;
+                                    Icon { name: root.submenu-left ? "previous" : "next"; size: 13px; y: (parent.height - self.height) / 2; }
+                                }
+                            }
+                            command-focus := FocusScope {
+                                width: parent.width;
+                                height: parent.height;
+                                enabled: command.shown;
+                                key-pressed(event) => {
+                                    if (event.text == Key.Return || event.text == " ") {
+                                        command-row.invoke();
+                                        return accept;
+                                    }
+                                    return reject;
+                                }
+                                command-touch := TouchArea {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    mouse-cursor: pointer;
+                                    changed has-hover => {
+                                        if (self.has-hover) { root.showing-overflow = command.action == "__submenu"; }
+                                    }
+                                    clicked => { command-row.invoke(); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if root.showing-overflow: Rectangle {
+                x: root.submenu-left ? 0px : root.menu-width;
+                y: root.submenu-y;
+                width: root.menu-width;
+                height: root.submenu-height;
+                background: Theme.elevated;
+                border-radius: Theme.radius;
+                border-width: 1px;
+                border-color: Theme.border-strong;
+                VerticalLayout {
+                    padding: 5px;
+                    alignment: start;
+                    for command in root.overflow: Rectangle {
+                        visible: command.shown;
+                        height: command.shown ? 29px : 0px;
+                        border-radius: 4px;
+                        background: submenu-touch.has-hover || submenu-focus.has-focus ? Theme.hover : transparent;
+                        accessible-role: button;
+                        accessible-label: command.label;
+                        accessible-action-default => { root.chosen(command.action); popup.close(); }
+                        Icon { name: command.icon; size: 15px; x: 9px; y: (parent.height - self.height) / 2; }
+                        Text {
+                            x: 34px; width: parent.width - 42px; height: parent.height;
+                            text: command.label; color: Theme.text; font-size: 13px;
+                            vertical-alignment: center; horizontal-alignment: left; overflow: elide;
+                        }
+                        submenu-focus := FocusScope {
+                            width: parent.width;
+                            height: parent.height;
+                            enabled: command.shown;
+                            key-pressed(event) => {
+                                if (event.text == Key.Return || event.text == " ") {
+                                    root.chosen(command.action); popup.close(); return accept;
+                                }
+                                return reject;
+                            }
+                            submenu-touch := TouchArea {
+                                width: parent.width; height: parent.height; mouse-cursor: pointer;
+                                clicked => { root.chosen(command.action); popup.close(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    @children
+}
+
+export component FileMenu inherits IconMenu {
+    in property <int> file-id: -1;
+    property <bool> has-overflow: App.context-browse == 1 || App.context-convert == 1 || App.context-rename == 1;
+    shown-count: 8 + (App.context-browse == 0 ? 1 : 0)
+        + (App.context-convert == 0 ? 1 : 0) + (App.context-rename == 0 ? 1 : 0) + (root.has-overflow ? 1 : 0);
+    overflow-count: (App.context-browse == 1 ? 1 : 0)
+        + (App.context-convert == 1 ? 1 : 0) + (App.context-rename == 1 ? 1 : 0);
+    commands: [
+        { label: "浏览图片", icon: "image", action: "preview", shown: App.context-browse == 0 },
+        { label: "转换图片", icon: "convert", action: "context-convert", shown: App.context-convert == 0 },
+        { label: "批量重命名", icon: "rename", action: "context-rename", shown: App.context-rename == 0 },
+        { label: "编辑与标注", icon: "edit", action: "edit", shown: true },
+        { label: "使用默认应用打开", icon: "external", action: "open", shown: true },
+        { label: "复制文件", icon: "copy", action: "copy-file", shown: true, divider: true },
+        { label: "复制图片", icon: "image", action: "copy-image", shown: true },
+        { label: "复制文件名", icon: "text", action: "copy-name", shown: true },
+        { label: "复制完整路径", icon: "link", action: "copy-path", shown: true },
+        { label: "在资源管理器中显示", icon: "folder", action: "reveal", shown: true, divider: true },
+        { label: "导出副本", icon: "export", action: "export", shown: true },
+        { label: "GImage 工具", icon: "grid", action: "__submenu", shown: root.has-overflow, divider: true },
+    ];
+    overflow: [
+        { label: "浏览图片", icon: "image", action: "preview", shown: App.context-browse == 1 },
+        { label: "转换图片", icon: "convert", action: "context-convert", shown: App.context-convert == 1 },
+        { label: "批量重命名", icon: "rename", action: "context-rename", shown: App.context-rename == 1 },
+    ];
+    chosen(action) => { App.file-action(root.file-id, action); }
+}

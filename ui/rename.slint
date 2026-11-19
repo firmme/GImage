@@ -1,0 +1,192 @@
+import { ListView, ScrollView } from "std-widgets.slint";
+import { App } from "state.slint";
+import { Theme } from "theme.slint";
+import { AppButton, AppToggle, Divider, EmptyHint, IconButton, SectionTitle, Segmented, SlimScrollbar, Stepper, TextField } from "widgets.slint";
+
+export component RenamePage inherits Rectangle {
+    background: Theme.bg;
+    property <string> preview-key: "\{App.rename-prefix}\n\{App.rename-suffix}\n\{App.rename-extension}\n\{App.rename-find}\n\{App.rename-replace}\n\{App.rename-start}:\{App.rename-padding}:\{App.rename-regex ? 1 : 0}:\{App.rename-numbered ? 1 : 0}:\{App.rename-sort}:\{App.rename-sort-descending ? 1 : 0}";
+    changed preview-key => { App.rename-changed(); }
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        HorizontalLayout {
+            spacing: 10px;
+            Text {
+                text: "批量重命名";
+                color: Theme.text;
+                font-size: 22px;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+            Text {
+                text: App.rename-loading ? "正在读取…" : "\{App.rename-target-count} 个文件 · \{App.rename-changed-count} 项将修改";
+                color: Theme.text-muted;
+                font-size: 13px;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            if App.rename-target-count > 0: Segmented {
+                width: 272px;
+                emphasized-selection: true;
+                options: ["文件名", "大小", "创建时间", "修改时间"];
+                current: App.rename-sort;
+                changed(index) => { App.rename-sort = index; }
+            }
+            if App.rename-target-count > 0: IconButton {
+                icon: App.rename-sort-descending ? "desc" : "asc";
+                tip: App.rename-sort-descending ? "当前降序 · 切换升序" : "当前升序 · 切换降序";
+                clicked => { App.rename-sort-descending = !App.rename-sort-descending; }
+            }
+            if App.rename-target-count > 0: AppButton {
+                text: "添加文件";
+                compact: true;
+                icon: "plus";
+                enabled: !App.rename-loading;
+                clicked => { App.rename-add-files(); }
+            }
+        }
+        HorizontalLayout {
+            vertical-stretch: 1;
+            spacing: 12px;
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.surface;
+                border-radius: Theme.radius;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 8px;
+                    Rectangle {
+                        height: 26px;
+                        Text { x: 8px; width: parent.width / 2 - 8px; height: parent.height; text: "原文件名"; color: Theme.text-muted; vertical-alignment: center; }
+                        Text { x: parent.width / 2 + 8px; width: parent.width / 2 - 8px; height: parent.height; text: "修改后"; color: Theme.text-muted; vertical-alignment: center; }
+                    }
+                    Divider {}
+                    Rectangle {
+                        vertical-stretch: 1;
+                        if App.rename-rows.length == 0: VerticalLayout {
+                            alignment: center;
+                            spacing: 12px;
+                            EmptyHint {
+                                icon: "rename";
+                                title: App.rename-loading ? "正在读取文件…" : App.rename-preview-pending ? "正在生成预览…" : "添加要重命名的文件";
+                            }
+                            if App.rename-target-count == 0 && !App.rename-loading: HorizontalLayout {
+                                alignment: center;
+                                AppButton {
+                                    text: "添加文件";
+                                    icon: "plus";
+                                    primary: true;
+                                    clicked => { App.rename-add-files(); }
+                                }
+                            }
+                        }
+                        names := ListView {
+                            visible: App.rename-rows.length > 0;
+                            width: parent.width - 9px;
+                            height: parent.height;
+                            vertical-scrollbar-policy: always-off;
+                            horizontal-scrollbar-policy: always-off;
+                            for row in App.rename-rows: Rectangle {
+                                height: 35px;
+                                background: name-hover.has-hover ? Theme.hover : transparent;
+                                Text {
+                                    x: 8px; width: parent.width / 2 - 20px; height: parent.height;
+                                    text: row.original;
+                                    color: Theme.text;
+                                    font-size: 13px;
+                                    overflow: elide;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle { x: parent.width / 2; width: 1px; height: parent.height; background: Theme.border; }
+                                Text {
+                                    x: parent.width / 2 + 10px; width: parent.width / 2 - 18px; height: parent.height;
+                                    text: row.result;
+                                    color: row.changed ? Theme.accent : Theme.text-muted;
+                                    font-size: 13px;
+                                    overflow: elide;
+                                    vertical-alignment: center;
+                                }
+                                name-hover := TouchArea {}
+                                Tooltip { text: @markdown("\{row.path}"); }
+                            }
+                        }
+                        SlimScrollbar {
+                            x: parent.width - self.width;
+                            height: parent.height;
+                            content: names.content-height;
+                            viewport: names.visible-height;
+                            offset: -names.content-y;
+                            moved(value) => { names.content-y = -value; }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                width: 300px;
+                background: Theme.surface;
+                border-radius: Theme.radius;
+                ScrollView {
+                    horizontal-scrollbar-policy: always-off;
+                    VerticalLayout {
+                        alignment: start;
+                        padding: 13px;
+                        spacing: 8px;
+                        SectionTitle { text: "命名规则"; }
+                        HorizontalLayout {
+                            SectionTitle { text: "正则模式"; }
+                            Rectangle { horizontal-stretch: 1; }
+                            AppToggle { checked <=> App.rename-regex; }
+                        }
+                        SectionTitle { text: App.rename-regex ? "匹配表达式" : "查找原名"; }
+                        TextField { text <=> App.rename-find; placeholder: App.rename-regex ? "例如 ^IMG_(\\d+)$" : "输入原名中的文字"; }
+                        SectionTitle { text: "替换为"; }
+                        TextField { text <=> App.rename-replace; placeholder: App.rename-regex ? "例如 照片_$1" : "输入新名称中的文字"; }
+                        if App.rename-regex: Text {
+                            text: "^.*$ 匹配整个原名，$1 引用捕获组。";
+                            color: Theme.text-muted;
+                            font-size: 12px;
+                            wrap: word-wrap;
+                        }
+                        if App.rename-error != "": Text {
+                            text: App.rename-error;
+                            color: Theme.danger;
+                            font-size: 12px;
+                            wrap: word-wrap;
+                        }
+                        Divider {}
+                        SectionTitle { text: "前缀"; }
+                        TextField { text <=> App.rename-prefix; }
+                        SectionTitle { text: "名称后缀"; }
+                        TextField { text <=> App.rename-suffix; }
+                        SectionTitle { text: "文件扩展名"; }
+                        TextField { text <=> App.rename-extension; placeholder: "留空保留，例如 .png"; }
+                        HorizontalLayout {
+                            SectionTitle { text: "添加序号"; }
+                            Rectangle { horizontal-stretch: 1; }
+                            AppToggle { checked <=> App.rename-numbered; }
+                        }
+                        if App.rename-numbered: HorizontalLayout {
+                            spacing: 6px;
+                            SectionTitle { text: "起始"; }
+                            TextField { width: 76px; text <=> App.rename-start; }
+                            SectionTitle { text: "位数"; }
+                            Stepper { value <=> App.rename-padding; min-value: 1; max-value: 9; step: 1; }
+                        }
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            Rectangle { horizontal-stretch: 1; }
+            AppButton {
+                text: "重命名 \{App.rename-changed-count} 个文件";
+                primary: true;
+                icon: "rename";
+                enabled: !App.rename-loading && !App.rename-preview-pending && App.rename-changed-count > 0 && App.rename-error == "";
+                clicked => { App.rename-apply(); }
+            }
+        }
+    }
+}

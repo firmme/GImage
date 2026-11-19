@@ -1,0 +1,12 @@
+[package]
+name = "gimage-cache"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Memory LRU + atomic on-disk thumbnail cache"
+
+[dependencies]
+gimage-core.workspace = true
+image.workspace = true
+tracing.workspace = true

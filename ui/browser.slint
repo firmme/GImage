@@ -1,0 +1,602 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { App, GridRow, ImageCell } from "state.slint";
+import { Icon } from "icons.slint";
+import { FileMenu, IconMenu } from "context.slint";
+import {
+    AppButton, Badge, Chip, Divider, EmptyHint, HProgress, IconButton, MetaRow, SectionTitle, SlimScrollbar,
+} from "widgets.slint";
+
+component CardView inherits Rectangle {
+    in property <ImageCell> cell;
+    in property <bool> selected: cell.marked || (App.marked-count == 0 && App.selected-id == cell.id);
+    callback clicked(int);
+    callback double-clicked();
+    callback star-clicked();
+
+    property <int> click-mode: 0;
+
+    VerticalLayout {
+        // Thumbnail area
+        Rectangle {
+            clip: true;
+            background: Theme.thumb-bg;
+            border-radius: 6px;
+            vertical-stretch: 1;
+
+            Image {
+                source: root.cell.thumb;
+                image-fit: contain;
+                width: 100%;
+                height: 100%;
+                visible: root.cell.state == 1;
+            }
+            Rectangle {
+                width: parent.width;
+                height: parent.height;
+                border-radius: 6px;
+                border-width: root.selected ? 2px : card-ta.has-hover ? 1px : 0px;
+                border-color: root.selected ? Theme.accent : Theme.border-strong;
+            }
+
+            if root.cell.state == 0: VerticalLayout {
+                alignment: center;
+                Text {
+                    text: "···";
+                    color: Theme.text-dim;
+                    font-size: 18px;
+                    horizontal-alignment: center;
+                }
+            }
+
+            if root.cell.state == 2: VerticalLayout {
+                alignment: center;
+                spacing: 4px;
+                Rectangle {
+                    height: 24px;
+                    Icon {
+                        name: "warning";
+                        size: 22px;
+                        tint: Theme.warning;
+                        x: (parent.width - self.width) / 2;
+                    }
+                }
+                Text {
+                    text: "无法预览";
+                    color: Theme.text-dim;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                }
+            }
+
+            // Favorite marker / hover action
+            Rectangle {
+                x: parent.width - 28px;
+                y: 6px;
+                width: 22px;
+                height: 22px;
+                border-radius: 11px;
+                background: root.cell.favorite ? #00000055 : #00000033;
+                visible: root.cell.favorite || card-ta.has-hover;
+
+                Icon {
+                    name: "star";
+                    size: 13px;
+                    tint: Theme.favorite;
+                    fill: root.cell.favorite ? Theme.favorite : transparent;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+
+                star-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.star-clicked(); }
+                }
+            }
+        }
+
+        Text {
+            height: 27px;
+            text: root.cell.name;
+            color: root.selected ? Theme.accent : Theme.text;
+            font-size: 13px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+            Tooltip { text: @markdown("\{root.cell.name}"); }
+        }
+    }
+
+    file-menu := FileMenu {
+        file-id: root.cell.id;
+        FocusScope {
+            width: parent.width;
+            height: parent.height;
+            key-pressed(event) => {
+                if (event.modifiers.shift) {
+                    if (event.text == Key.LeftArrow) { App.extend-marked(-1); return accept; }
+                    if (event.text == Key.RightArrow) { App.extend-marked(1); return accept; }
+                    if (event.text == Key.UpArrow) { App.extend-marked(-App.columns); return accept; }
+                    if (event.text == Key.DownArrow) { App.extend-marked(App.columns); return accept; }
+                }
+                if (event.modifiers.control && event.text == "c") {
+                    App.file-action(root.cell.id, "copy-file");
+                    return accept;
+                }
+                return reject;
+            }
+            card-ta := TouchArea {
+                width: parent.width;
+                height: parent.height;
+                mouse-cursor: pointer;
+                clicked => { parent.focus(); }
+                double-clicked => { if (root.click-mode == 0) { root.double-clicked(); } }
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        if (event.button == PointerEventButton.right) {
+                            parent.focus();
+                            root.clicked(4);
+                            file-menu.show-at(self.mouse-x, self.mouse-y);
+                        } else if (event.button == PointerEventButton.left) {
+                            root.click-mode = event.modifiers.shift ? 2 : event.modifiers.control ? 1 : 0;
+                        }
+                    } else if (event.kind == PointerEventKind.up && event.button == PointerEventButton.left
+                        && self.mouse-x >= 0px && self.mouse-x < self.width
+                        && self.mouse-y >= 0px && self.mouse-y < self.height)
+                    {
+                        root.clicked(event.modifiers.shift ? 2 : event.modifiers.control ? 1 : root.click-mode);
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        x: 7px;
+        y: 7px;
+        width: 21px;
+        height: 21px;
+        border-radius: 5px;
+        visible: root.cell.marked || card-ta.has-hover || checkbox.has-hover || App.marked-count > 0;
+        background: root.cell.marked ? Theme.accent : #181818bb;
+        border-width: 1px;
+        border-color: root.cell.marked ? Theme.accent : #ffffff9c;
+        Icon {
+            name: "check";
+            size: 14px;
+            tint: Theme.dark ? #101722 : #ffffff;
+            visible: root.cell.marked;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+        }
+        checkbox := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.clicked(3); }
+        }
+        Tooltip { text: @markdown("加入或移出转换选择"); }
+    }
+}
+
+component GridRowView inherits Rectangle {
+    in property <GridRow> row-data;
+    in property <length> cell-width;
+    height: self.cell-width * 0.74 + 36px;
+
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+        for cell in root.row-data.cells: CardView {
+            width: root.cell-width;
+            height: parent.height - 8px;
+            cell: cell;
+            clicked(mode) => { App.cell-clicked(cell.id, mode); }
+            double-clicked => { App.cell-double-clicked(cell.id); }
+            star-clicked => { App.star-clicked(cell.id); }
+        }
+    }
+}
+
+component Sidebar inherits Rectangle {
+    background: Theme.surface;
+    border-width: 1px;
+    border-color: Theme.border;
+    border-radius: 0;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        if App.recent-folders.length > 0: SectionTitle { text: "最近文件夹"; height: 16px; }
+
+        for folder in App.recent-folders: Rectangle {
+            height: 32px;
+            border-radius: 6px;
+            background: f-ta.has-hover ? Theme.hover : #00000000;
+            HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                spacing: 6px;
+                Rectangle {
+                    width: 16px;
+                    Icon {
+                        name: "folder";
+                        size: 14px;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+                Text {
+                    text: folder.name;
+                    color: Theme.text;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Text {
+                    text: "\{folder.count}";
+                    color: Theme.text-dim;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+            }
+            folder-menu := IconMenu {
+                shown-count: 4;
+                commands: [
+                    { label: "在 GImage 中打开", icon: "folder", action: "browse", shown: true },
+                    { label: "在资源管理器中打开", icon: "external", action: "open", shown: true },
+                    { label: "复制文件夹路径", icon: "link", action: "copy-path", shown: true },
+                    { label: "从最近文件夹移除", icon: "close", action: "remove", shown: true, divider: true },
+                ];
+                chosen(action) => {
+                    if (action == "browse") { App.open-folder-path(folder.path); }
+                    else { App.folder-action(folder.path, action); }
+                }
+                f-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { App.open-folder-path(folder.path); }
+                    pointer-event(event) => {
+                        if (event.kind == PointerEventKind.down && event.button == PointerEventButton.right) {
+                            folder-menu.show-at(self.mouse-x, self.mouse-y);
+                        }
+                    }
+                }
+            }
+        }
+
+        if App.format-chips.length > 0: Divider {}
+        if App.format-chips.length > 0: SectionTitle { text: "格式"; height: 16px; }
+        if App.format-chips.length > 0: formats := Rectangle {
+            property <int> cols: max(1, floor((self.width + 6px) / 58px));
+            height: ceil(App.format-chips.length / self.cols) * 32px;
+            for f[index] in App.format-chips: Chip {
+                x: (mod(index, formats.cols)) * 58px;
+                y: floor(index / formats.cols) * 32px;
+                width: 52px;
+                text: f.label;
+                active: f.active;
+                clicked => { App.format-chip-clicked(f.label); }
+            }
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+component Inspector inherits Rectangle {
+    background: Theme.surface;
+    border-width: 1px;
+    border-color: Theme.border;
+
+    if App.selected-id < 0: VerticalLayout {
+        padding: 20px;
+        alignment: center;
+        EmptyHint {
+            icon: "image";
+            title: "未选择图片";
+
+        }
+    }
+
+    if App.selected-id >= 0: VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+
+        Rectangle {
+            height: 176px;
+            background: Theme.thumb-bg;
+            border-radius: Theme.radius;
+            clip: true;
+            Image {
+                source: App.sel-thumb;
+                image-fit: contain;
+                width: 100%;
+                height: 100%;
+            }
+            if App.sel-thumb.width > 0 && App.sel-favorite: Rectangle {
+                x: parent.width - 30px;
+                y: 8px;
+                width: 22px;
+                height: 22px;
+                border-radius: 11px;
+                background: #00000066;
+                Icon {
+                    name: "star";
+                    size: 13px;
+                    tint: Theme.favorite;
+                    fill: Theme.favorite;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+        }
+
+        Text {
+            text: App.sel-name;
+            color: Theme.text;
+            font-size: 14px;
+            font-weight: 600;
+            wrap: word-wrap;
+            max-lines: 2;
+        }
+
+        HorizontalLayout {
+            spacing: 6px;
+            Badge { text: App.sel-format; tint: Theme.accent; }
+            Badge { text: App.sel-dims; }
+            Badge { text: App.sel-size; }
+        }
+
+        MetaRow { label: "位置"; value: App.sel-dir; }
+        MetaRow { label: "修改时间"; value: App.sel-modified; }
+        if App.sel-status != "": MetaRow { label: "状态"; value: App.sel-status; }
+
+        Rectangle { height: 4px; }
+
+        AppButton {
+            text: App.sel-favorite ? "已收藏" : "收藏";
+            icon: "star";
+            ghost: true;
+            enabled: !App.sel-missing;
+            clicked => { App.star-clicked(App.selected-id); }
+        }
+        AppButton {
+            text: "预览";
+            icon: "image";
+            primary: true;
+            enabled: !App.sel-missing;
+            clicked => { App.cell-double-clicked(App.selected-id); }
+        }
+        AppButton {
+            text: "编辑";
+            icon: "edit";
+            enabled: !App.sel-missing;
+            clicked => { App.edit-param-changed("open-editor", 0); }
+        }
+        AppButton {
+            text: "导出副本…";
+            icon: "export";
+            enabled: !App.sel-missing;
+            clicked => { App.open-export(); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        AppButton {
+            text: "在资源管理器中显示";
+            icon: "external";
+            ghost: true;
+            enabled: !App.sel-missing;
+            clicked => { App.reveal-in-explorer(App.selected-id); }
+        }
+    }
+}
+
+export component BrowserPage inherits Rectangle {
+    background: Theme.bg;
+
+    // Column count is derived from the available grid width and reported to
+    // Rust, which re-chunks the row model.
+    property <int> cols: max(1, floor((grid-host.width - 24px + 8px) / (176px + 8px)));
+    changed cols => {
+        if (App.columns != cols) {
+            App.columns = cols;
+            App.columns-changed(cols);
+        }
+    }
+    VerticalLayout {
+        HorizontalLayout {
+            spacing: 0;
+
+            if App.browser-left-open: Sidebar { width: 212px; }
+
+            grid-host := Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.bg;
+
+                VerticalLayout {
+                    spacing: 0;
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 12px;
+
+                    if App.scanning: Rectangle {
+                        height: 3px;
+                        HProgress {
+                            value: 0.35;
+                            height: parent.height;
+                            border-radius: 0;
+                        }
+                    }
+
+                    if App.grid-rows.length == 0 && App.scanning: VerticalLayout {
+                        alignment: center;
+                        spacing: 8px;
+                        Text {
+                            text: "正在扫描文件夹…";
+                            color: Theme.text-muted;
+                            font-size: 13px;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: App.scan-status;
+                            color: Theme.text-dim;
+                            font-size: 12px;
+                            horizontal-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+
+                    if App.grid-rows.length == 0 && !App.scanning && !App.has-browser-source: VerticalLayout {
+                        alignment: center;
+                        padding: 32px;
+                        spacing: 14px;
+                        EmptyHint {
+                            icon: "folder";
+                            title: "选择图片文件夹";
+
+                        }
+                        HorizontalLayout {
+                            alignment: center;
+                            AppButton {
+                                width: 148px;
+                                text: "打开文件夹…";
+                                icon: "folder";
+                                primary: true;
+                                clicked => { App.open-folder(); }
+                            }
+                        }
+                    }
+
+                    if App.grid-rows.length == 0 && !App.scanning && App.has-browser-source: VerticalLayout {
+                        alignment: center;
+                        padding: 32px;
+                        EmptyHint {
+                            icon: "search";
+                            title: "没有匹配的图片";
+                            body: "尝试更换筛选条件，或重新扫描这个文件夹。";
+                        }
+                    }
+
+                    if App.grid-rows.length > 0: Rectangle {
+                      vertical-stretch: 1;
+                      grid-area := ListView {
+                        width: parent.width - 8px;
+                        height: parent.height;
+                        vertical-scrollbar-policy: always-off;
+                        horizontal-scrollbar-policy: always-off;
+                        property <length> card-width: max(1px, (self.visible-width - 8px * (App.columns - 1)) / max(App.columns, 1));
+                        property <length> row-height: self.card-width * 0.74 + 36px;
+                        property <int> first-row: max(0, floor(-self.content-y / self.row-height) - 1);
+                        property <int> end-row: ceil((-self.content-y + self.visible-height) / self.row-height) + 1;
+                        init => { App.browser-viewport(self.first-row, self.end-row); }
+                        changed first-row => { App.browser-viewport(self.first-row, self.end-row); }
+                        changed end-row => { App.browser-viewport(self.first-row, self.end-row); }
+                        for row in App.grid-rows: GridRowView {
+                            row-data: row;
+                            cell-width: grid-area.card-width;
+                        }
+                        changed content-y => {
+                            if (App.can-load-more && !App.loading-more
+                                && -self.content-y + self.visible-height > self.content-height - 900px) {
+                                App.load-more();
+                            }
+                        }
+                      }
+                      SlimScrollbar {
+                          x: parent.width - 8px;
+                          height: parent.height;
+                          content: grid-area.content-height;
+                          viewport: grid-area.visible-height;
+                          offset: -grid-area.content-y;
+                          moved(offset) => { grid-area.content-y = -offset; }
+                      }
+                    }
+
+                }
+            }
+
+            if App.browser-right-open: Inspector { width: 296px; }
+        }
+        Rectangle { height: 1px; background: Theme.border; }
+        Rectangle {
+            height: 27px;
+            background: Theme.surface;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 8px;
+                IconButton {
+                    side: 24px;
+                    icon: "sidebar-left";
+                    tip: App.browser-left-open ? "隐藏左侧边栏" : "显示左侧边栏";
+                    checkable: true;
+                    active: App.browser-left-open;
+                    clicked => { App.browser-left-open = !App.browser-left-open; }
+                }
+                Text {
+                    text: App.scanning ? App.scan-status
+                        : !App.has-browser-source ? "未打开目录"
+                        : "\{App.total-images} 张" + (App.marked-count > 0 ? " · 已选 \{App.marked-count} 张" : "")
+                            + (App.loading-more ? " · 正在载入…" : "");
+                    color: Theme.text-muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                if App.folder-path != "": depth-menu := IconMenu {
+                    width: 51px;
+                    menu-width: 106px;
+                    heading: "目录深度";
+                    shown-count: 6;
+                    active-action: "\{App.scan-depth-limit}";
+                    commands: [
+                        { label: "0层", icon: App.scan-depth-limit == 0 ? "check" : "", action: "0", shown: true },
+                        { label: "1层", icon: App.scan-depth-limit == 1 ? "check" : "", action: "1", shown: true },
+                        { label: "2层", icon: App.scan-depth-limit == 2 ? "check" : "", action: "2", shown: true },
+                        { label: "3层", icon: App.scan-depth-limit == 3 ? "check" : "", action: "3", shown: true },
+                        { label: "4层", icon: App.scan-depth-limit == 4 ? "check" : "", action: "4", shown: true },
+                        { label: "5层", icon: App.scan-depth-limit == 5 ? "check" : "", action: "5", shown: true },
+                    ];
+                    chosen(action) => { App.scan-depth-changed(action.to-float()); }
+                    AppButton {
+                        width: parent.width;
+                        height: parent.height;
+                        compact: true;
+                        ghost: true;
+                        icon: "depth";
+                        text: App.scanning ? "…" : App.scan-depth-found < 0 ? "—" : "\{App.scan-depth-found}";
+                        tip: "实际图片所在的最深目录。0层为当前目录。点击修改扫描上限。";
+                        clicked => { depth-menu.show-at(0px, -214px); }
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                if App.total-images > 0: AppButton {
+                    compact: true;
+                    ghost: true;
+                    text: "全选";
+                    enabled: !App.scanning;
+                    clicked => { App.select-all(); }
+                }
+                if App.marked-count > 0: AppButton {
+                    compact: true;
+                    ghost: true;
+                    text: "取消选择";
+                    clicked => { App.clear-marked(); }
+                }
+                if App.selected-id >= 0: Text {
+                    text: App.sel-format + "  ·  " + App.sel-dims + "  ·  " + App.sel-size;
+                    color: Theme.text-muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+                IconButton {
+                    side: 24px;
+                    icon: "sidebar-right";
+                    tip: App.browser-right-open ? "隐藏右侧信息栏" : "显示右侧信息栏";
+                    checkable: true;
+                    active: App.browser-right-open;
+                    clicked => { App.browser-right-open = !App.browser-right-open; }
+                }
+            }
+        }
+    }
+}

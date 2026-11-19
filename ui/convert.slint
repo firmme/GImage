@@ -1,0 +1,289 @@
+import { ComboBox, ListView, ScrollView } from "std-widgets.slint";
+import { App } from "state.slint";
+import { Theme } from "theme.slint";
+import { Icon } from "icons.slint";
+import {
+    AppButton, AppSlider, Divider, EmptyHint, IconButton, Segmented,
+    SlimScrollbar, TextField,
+} from "widgets.slint";
+
+component FieldLabel inherits Text {
+    color: Theme.text;
+    font-size: 13px;
+    font-weight: 500;
+    vertical-alignment: center;
+}
+
+component PixelInput inherits Rectangle {
+    in-out property <int> value;
+    in property <string> label;
+    height: 30px;
+    min-width: 57px;
+    border-radius: Theme.radius-sm;
+    background: Theme.bg;
+    border-width: 1px;
+    border-color: field.has-focus ? Theme.accent : Theme.border;
+    changed value => { if (!field.has-focus) { field.text = "\{root.value}"; } }
+    field := TextInput {
+        x: 6px;
+        width: parent.width - 12px;
+        height: parent.height;
+        text: "\{root.value}";
+        accessible-label: root.label;
+        color: Theme.text;
+        font-size: 13px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        input-type: number;
+        single-line: true;
+        edited => {
+            if (self.text.is-float() && self.text.to-float() > 0 && self.text.to-float() <= 20000) {
+                root.value = round(self.text.to-float());
+            }
+        }
+        accepted => { self.text = "\{root.value}"; }
+        changed has-focus => {
+            if (!self.has-focus) { self.text = "\{root.value}"; }
+        }
+    }
+}
+
+export component ConvertPage inherits Rectangle {
+    background: Theme.bg;
+    property <string> preview-key: "\{App.convert-index}/\{App.convert-rotation}/\{App.convert-resize-mode}/\{App.convert-max-w}/\{App.convert-max-h}/\{App.export-format-index}/\{App.convert-prefix}";
+    changed preview-key => { App.convert-changed(); }
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 13px;
+
+        HorizontalLayout {
+            spacing: 10px;
+            Text {
+                text: "批量转换";
+                color: Theme.text;
+                font-size: 22px;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+            Text {
+                text: App.convert-loading ? "正在读取"
+                    : "\{App.convert-files.length} 张 · " + (App.convert-selected-only ? "浏览页所选" : "当前目录");
+                color: Theme.text-muted;
+                font-size: 13px;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            if App.active-tasks > 0: AppButton {
+                icon: "tasks";
+                text: "查看任务";
+                ghost: true;
+                clicked => { App.page-requested(3); }
+            }
+        }
+
+        HorizontalLayout {
+            vertical-stretch: 1;
+            spacing: 12px;
+            Rectangle {
+                width: 220px;
+                background: Theme.surface;
+                border-radius: Theme.radius;
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 6px;
+                    FieldLabel { text: "文件"; height: 24px; }
+                    Divider {}
+                    Rectangle {
+                        vertical-stretch: 1;
+                        file-list := ListView {
+                            width: parent.width - 8px;
+                            height: parent.height;
+                            vertical-scrollbar-policy: always-off;
+                            horizontal-scrollbar-policy: always-off;
+                            for file[index] in App.convert-files: Rectangle {
+                                height: 32px;
+                                border-radius: 5px;
+                                background: index == App.convert-index ? Theme.surface-alt
+                                    : file-touch.has-hover ? Theme.hover : transparent;
+                                HorizontalLayout {
+                                    padding-left: 7px;
+                                    padding-right: 5px;
+                                    spacing: 7px;
+                                    Icon { name: "image"; size: 15px; }
+                                    Text {
+                                        text: file.name;
+                                        color: index == App.convert-index ? Theme.text : Theme.text-muted;
+                                        font-size: 13px;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                file-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { App.convert-select(index); }
+                                }
+                                Tooltip { text: @markdown("\{file.path}"); }
+                            }
+                        }
+                        SlimScrollbar {
+                            x: parent.width - self.width;
+                            height: parent.height;
+                            content: file-list.content-height;
+                            viewport: file-list.visible-height;
+                            offset: -file-list.content-y;
+                            moved(value) => { file-list.content-y = -value; }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                min-width: 270px;
+                background: Theme.thumb-bg;
+                border-radius: Theme.radius;
+                clip: true;
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Icon { name: "image"; size: 16px; }
+                        FieldLabel { text: "转换预览"; height: 24px; }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    if App.convert-index >= 0: Rectangle {
+                        vertical-stretch: 1;
+                        Image {
+                            width: parent.width;
+                            height: parent.height;
+                            image-fit: contain;
+                            source: App.convert-preview;
+                        }
+                        if App.convert-preview-status != "": Text {
+                            width: parent.width;
+                            height: parent.height;
+                            text: App.convert-preview-status;
+                            color: Theme.text-muted;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            wrap: word-wrap;
+                        }
+                    }
+                    if App.convert-index < 0: VerticalLayout {
+                        vertical-stretch: 1;
+                        alignment: center;
+                        EmptyHint {
+                            title: App.convert-error != "" ? "无法加载文件"
+                                : App.convert-loading ? "正在读取文件…" : "此目录没有可转换的图片";
+                            body: App.convert-error;
+                        }
+                    }
+                    if App.convert-output-name != "": Text {
+                        height: 21px;
+                        text: App.convert-output-name;
+                        color: Theme.text-muted;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+            }
+
+            Rectangle {
+                width: 300px;
+                background: Theme.surface;
+                border-radius: Theme.radius;
+                ScrollView {
+                    horizontal-scrollbar-policy: always-off;
+                    VerticalLayout {
+                        alignment: start;
+                        padding: 12px;
+                        spacing: 7px;
+                        FieldLabel { text: "输出格式"; }
+                        Segmented {
+                            options: App.export-formats;
+                            current: App.export-format-index;
+                            changed(index) => { App.export-format-index = index; App.export-format-changed(index); }
+                        }
+                        if App.export-formats[App.export-format-index] == "JPEG": VerticalLayout {
+                            spacing: 4px;
+                            FieldLabel { text: "质量 · \{round(App.convert-quality * 100)}"; }
+                            AppSlider { value <=> App.convert-quality; min-value: 0.1; max-value: 1; }
+                        }
+                        Divider {}
+                        FieldLabel { text: "顺时针旋转"; }
+                        Segmented {
+                            options: ["0°", "90°", "180°", "270°"];
+                            current: App.convert-rotation;
+                            changed(index) => { App.convert-rotation = index; }
+                        }
+                        FieldLabel { text: "裁切方式"; }
+                        ComboBox {
+                            model: ["不裁切", "保持原比例", "适合宽度", "添加填充", "裁剪", "拉伸"];
+                            current-index <=> App.convert-resize-mode;
+                        }
+                        ComboBox {
+                            model: App.resolution-presets;
+                            current-index: 0;
+                            selected(value) => {
+                                App.convert-preset(self.current-index);
+                                self.current-index = 0;
+                            }
+                        }
+                        if App.convert-resize-mode != 0: HorizontalLayout {
+                            spacing: 5px;
+                            PixelInput { value <=> App.convert-max-w; label: "输出宽度"; }
+                            if App.convert-resize-mode != 2: FieldLabel { text: "×"; }
+                            if App.convert-resize-mode != 2: PixelInput { value <=> App.convert-max-h; label: "输出高度"; }
+                            FieldLabel { text: "px"; }
+                        }
+                        Divider {}
+                        FieldLabel { text: "输出目录"; }
+                        HorizontalLayout {
+                            spacing: 5px;
+                            AppButton {
+                                horizontal-stretch: 1;
+                                icon: "folder";
+                                text: App.convert-directory == "" ? "各图片所在目录" : App.convert-directory;
+                                clicked => { App.convert-pick-folder(); }
+                            }
+                            if App.convert-directory != "": IconButton {
+                                icon: "close"; tip: "恢复为各图片所在目录";
+                                clicked => { App.convert-reset-folder(); }
+                            }
+                        }
+                        FieldLabel { text: "文件名前缀"; }
+                        TextField { text <=> App.convert-prefix; placeholder: "留空时添加 -export 后缀"; }
+                        FieldLabel { text: "同名文件"; }
+                        Segmented {
+                            options: ["重命名", "跳过", "覆盖"];
+                            current: App.convert-policy;
+                            changed(index) => { App.convert-policy = index; }
+                        }
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            AppButton {
+                icon: "folder";
+                text: "打开输出目录";
+                enabled: App.folder-path != "";
+                ghost: true;
+                clicked => { App.convert-open-folder(); }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            AppButton {
+                icon: "convert";
+                text: "转换 \{App.convert-files.length} 张";
+                primary: true;
+                enabled: !App.convert-loading && App.convert-files.length > 0;
+                clicked => { App.convert-start(); }
+            }
+        }
+    }
+}

@@ -1,0 +1,13 @@
+[package]
+name = "gimage-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Domain types, edit model and settings shared by all GImage crates"
+
+[dependencies]
+serde.workspace = true
+regex = "1"
+serde_json.workspace = true
+thiserror.workspace = true

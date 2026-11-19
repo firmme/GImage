@@ -1,0 +1,8 @@
+[toolchain]
+# This machine has no MSVC linker installed, so the project targets the
+# GNU toolchain (its bundled rust-lld + MinGW CRT import libraries link fine).
+# On a machine with Visual Studio Build Tools, switch to
+# "stable-x86_64-pc-windows-msvc" and adjust .cargo/config.toml if needed.
+channel = "stable-x86_64-pc-windows-gnu"
+components = ["rustfmt", "clippy"]
+targets = []

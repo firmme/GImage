@@ -1,0 +1,47 @@
+// Shared design tokens. Dark is the default; the app toggles `dark` from Rust.
+export global Theme {
+    in-out property <bool> dark: true;
+    in-out property <bool> low-power: false;
+
+    // Surfaces
+    out property <color> bg: dark ? #111111 : #f4f5f7;
+    out property <color> surface: dark ? #191919 : #ffffff;
+    out property <color> surface-alt: dark ? #222222 : #eceef2;
+    out property <color> elevated: dark ? #292929 : #ffffff;
+    out property <color> hover: dark ? #303030 : #e6e9ee;
+    out property <color> pressed: dark ? #383838 : #dcE0e6;
+    out property <color> thumb-bg: dark ? #0c0c0c : #e9ebef;
+    out property <color> canvas: dark ? #202020 : #e9ebef;
+
+    // Lines & text
+    out property <color> border: dark ? #2b2b2b : #dfe3e9;
+    out property <color> border-strong: dark ? #424242 : #c6ccd6;
+    out property <color> text: dark ? #f1f1ef : #1b1f26;
+    out property <color> text-muted: dark ? #bababa : #5b6472;
+    out property <color> text-dim: dark ? #949494 : #4f5967;
+
+    // Accents
+    out property <color> accent: dark ? #85b7ff : #2f6fe4;
+    out property <color> accent-hover: dark ? #6ba0ff : #4a86ec;
+    out property <color> accent-soft: dark ? #1b2c47 : #e3edff;
+    out property <color> primary: dark ? #f1f1ef : #232323;
+    out property <color> primary-hover: dark ? #d6d6d4 : #3b3b3b;
+    out property <color> on-primary: dark ? #181818 : #ffffff;
+    out property <color> focus: dark ? #9dbff0 : #2f6fe4;
+    out property <color> on-accent: #ffffff;
+    out property <color> favorite: #f2c14e;
+    out property <color> danger: #e5484d;
+    out property <color> success: #3fb950;
+    out property <color> warning: #e3a008;
+
+    out property <length> radius-sm: 6px;
+    out property <length> radius: 8px;
+    out property <length> radius-lg: 12px;
+    out property <length> gap: 8px;
+    out property <length> pad: 16px;
+    out property <length> control-h: 34px;
+
+    in-out property <string> font: "Microsoft YaHei UI";
+    out property <string> font-display: font;
+    out property <string> mono: "Cascadia Mono";
+}

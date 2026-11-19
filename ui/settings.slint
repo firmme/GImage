@@ -1,0 +1,269 @@
+import { AboutSlint, ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { App } from "state.slint";
+import {
+    AppButton, AppToggle, HelpMark, Segmented, Stepper,
+} from "widgets.slint";
+
+component SettingsCard inherits Rectangle {
+    in property <string> title;
+
+    border-radius: Theme.radius;
+    background: Theme.surface;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        alignment: start;
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        @children
+    }
+}
+
+component SettingRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> hint: "";
+    spacing: 12px;
+    VerticalLayout {
+        horizontal-stretch: 1;
+        Text {
+            text: root.label;
+            color: Theme.text;
+            font-size: 12px;
+            Tooltip { text: @markdown("\{root.hint}"); }
+        }
+    }
+    @children
+}
+
+export component SettingsPage inherits Rectangle {
+    background: Theme.bg;
+
+    VerticalLayout {
+        Rectangle {
+            height: 56px;
+            background: Theme.bg;
+            HorizontalLayout {
+                padding-left: 24px;
+                padding-right: 24px;
+                padding-top: 11px;
+                padding-bottom: 11px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 1px;
+                    Text {
+                        text: "设置";
+                        color: Theme.text;
+                        font-size: 17px;
+                        font-weight: 600;
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                AppButton {
+                    text: "保存并应用";
+                    icon: "check";
+                    primary: true;
+                    clicked => { App.settings-apply(); }
+                }
+            }
+        }
+
+        Rectangle { height: 1px; background: Theme.border; }
+
+        ScrollView {
+            VerticalLayout {
+                padding: 20px;
+                spacing: 14px;
+                alignment: start;
+
+                HorizontalLayout {
+                    spacing: 14px;
+
+                    VerticalLayout {
+                        spacing: 14px;
+                        horizontal-stretch: 1;
+                        alignment: start;
+
+                        SettingsCard {
+                            title: "外观";
+                            SettingRow {
+                                label: "深色主题";
+                                AppToggle {
+                                    checked <=> App.settings-dark;
+                                    toggled(v) => { App.theme-toggled(v); }
+                                }
+                            }
+                            SettingRow {
+                                label: "缩略图生成尺寸";
+                                hint: "最长边像素，浏览网格尺寸不变";
+                                Segmented {
+                                    options: ["160 px", "320 px", "640 px"];
+                                    current: App.settings-thumb-px <= 160 ? 0 : App.settings-thumb-px >= 640 ? 2 : 1;
+                                    changed(i) => {
+                                        App.settings-thumb-px = i == 0 ? 160 : i == 1 ? 320 : 640;
+                                    }
+                                }
+                            }
+                            SettingRow {
+                                label: "低性能模式";
+                                hint: "关闭过渡动画，减少滚动时的重绘";
+                                AppToggle { checked <=> App.settings-low-power; }
+                            }
+                        }
+
+                        SettingsCard {
+                            title: "内存与缓存";
+                            SettingRow {
+                                label: "内存缓存上限（MB）";
+                                Stepper {
+                                    width: 128px;
+                                    min-value: 16;
+                                    max-value: 512;
+                                    step: 16;
+                                    value <=> App.settings-mem-mb;
+                                }
+                            }
+                            SettingRow {
+                                label: "磁盘缓存上限（MB）";
+                                hint: "保存后按新上限清理";
+                                Stepper {
+                                    width: 128px;
+                                    min-value: 32;
+                                    max-value: 10240;
+                                    step: 32;
+                                    value <=> App.settings-disk-mb;
+                                }
+                            }
+                            Text {
+                                text: App.cache-stats;
+                                color: Theme.text-dim;
+                                font-size: 11px;
+                                wrap: word-wrap;
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                AppButton {
+                                    text: "清理缩略图缓存";
+                                    icon: "trash";
+                                    ghost: true;
+                                    clicked => { App.cache-clear(); }
+                                }
+                                AppButton {
+                                    text: "打开数据目录";
+                                    icon: "folder";
+                                    ghost: true;
+                                    clicked => { App.open-data-folder(); }
+                                }
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 14px;
+                        horizontal-stretch: 1;
+                        alignment: start;
+
+                        SettingsCard {
+                            title: "扫描与性能";
+                            SettingRow {
+                                label: "递归扫描子文件夹";
+                                AppToggle { checked <=> App.settings-recursive; }
+                            }
+                            SettingRow {
+                                label: "包含隐藏文件";
+                                hint: "以点开头的文件与目录";
+                                AppToggle { checked <=> App.settings-hidden; }
+                            }
+                            SettingRow {
+                                label: "后台并发任务数";
+                                hint: "普通机器建议 2；过高会与解码内部线程争抢 CPU";
+                                Stepper {
+                                    width: 128px;
+                                    min-value: 1;
+                                    max-value: 8;
+                                    step: 1;
+                                    value <=> App.settings-concurrency;
+                                }
+                            }
+                        }
+
+                        SettingsCard {
+                            title: "文件右键菜单";
+                            SettingRow {
+                                label: "添加到 Windows 资源管理器";
+                                hint: "Windows 11 中位于「显示更多选项」。支持单张图片或整个文件夹。";
+                                AppToggle { checked <=> App.settings-explorer-menu; }
+                            }
+                            SettingRow {
+                                label: "浏览图片";
+                                Segmented {
+                                    options: ["主菜单", "子菜单", "隐藏"];
+                                    current: App.settings-context-browse;
+                                    changed(index) => { App.settings-context-browse = index; }
+                                }
+                            }
+                            SettingRow {
+                                label: "转换图片";
+                                Segmented {
+                                    options: ["主菜单", "子菜单", "隐藏"];
+                                    current: App.settings-context-convert;
+                                    changed(index) => { App.settings-context-convert = index; }
+                                }
+                            }
+                            SettingRow {
+                                label: "批量重命名";
+                                Segmented {
+                                    options: ["主菜单", "子菜单", "隐藏"];
+                                    current: App.settings-context-rename;
+                                    changed(index) => { App.settings-context-rename = index; }
+                                }
+                            }
+                        }
+
+                        SettingsCard {
+                            title: "数据";
+                            Text {
+                                text: App.db_stats;
+                                color: Theme.text-dim;
+                                font-size: 11px;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        SettingsCard {
+                            title: "关于";
+                            HorizontalLayout {
+                                alignment: start;
+                                spacing: 6px;
+                                Text {
+                                    text: App.version-info;
+                                    color: Theme.text;
+                                    font-size: 12px;
+                                    wrap: word-wrap;
+                                }
+                                HelpMark { tip: App.engine-detail; }
+                                Rectangle { horizontal-stretch: 1; }
+                                AppButton {
+                                    text: App.update-busy ? App.update-status : "检查更新";
+                                    icon: "refresh";
+                                    enabled: !App.update-busy;
+                                    clicked => { App.check-updates(); }
+                                }
+                            }
+                            HorizontalLayout {
+                                alignment: start;
+                                AboutSlint { width: 270px; height: 95px; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

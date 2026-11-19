@@ -1,0 +1,27 @@
+[package]
+name = "gimage-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Image engine abstraction with a pure-Rust codec backend"
+
+[dependencies]
+gimage-core.workspace = true
+image.workspace = true
+tiff = "0.11"
+kamadak-exif.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+tiny-skia = "0.12"
+ab_glyph = "0.2"
+resvg = "0.49"
+flate2 = "1.0"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = [
+    "Data_Pdf", "Storage_Streams", "Win32_Graphics_Imaging", "Win32_System_Com", "Win32_System_WinRT",
+] }
+
+[dev-dependencies]
+tempfile = "3"

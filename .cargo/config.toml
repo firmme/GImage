@@ -1,0 +1,8 @@
+# Keep build artifacts on the same fast disk as the workspace.
+# Change this path if E: is not your build disk; the spec recommends a
+# short, space-rich path and never committing the target directory.
+[build]
+target-dir = "E:/RustBuild/gimage"
+
+[net]
+retry = 3

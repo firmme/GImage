@@ -1,0 +1,219 @@
+import { Theme } from "theme.slint";
+import { App } from "state.slint";
+import { AppButton, IconButton, SearchBox, Segmented } from "widgets.slint";
+import { IconMenu } from "context.slint";
+
+export component TitleBar inherits Rectangle {
+    in property <bool> maximized;
+    callback minimize();
+    callback maximize();
+    property <bool> browser-actions: App.page == 0 && App.has-browser-source;
+    property <bool> preview-actions: App.page == 1 && App.preview-id >= 0;
+
+    height: 40px;
+    background: App.page == 1 ? Theme.canvas : Theme.bg;
+
+    title-region := WindowMoveArea {
+        x: 0;
+        width: parent.width;
+        height: parent.height;
+        enabled: !App.fullscreen;
+
+        TouchArea { double-clicked => { root.maximize(); } }
+    }
+
+    scope-title := Text {
+        width: max(80px, root.width - (root.browser-actions ? 960px : App.page == 1 ? 700px : 710px));
+        height: parent.height;
+        x: (parent.width - self.width) / 2 - (root.browser-actions ? 96px : 0px);
+        text: App.page == 0 ? (App.has-browser-source ? App.folder-name : "图片库")
+            : App.page == 1 ? App.preview-title
+            : App.page == 2 ? App.sel-name
+            : App.page == 3 ? "任务" : App.page == 5 ? "转换" : App.page == 6 ? "重命名" : "设置";
+        color: Theme.text;
+        font-size: 14px;
+        font-weight: 600;
+        overflow: elide;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        Tooltip { text: @markdown("\{App.page == 0 ? App.folder-path : App.page < 3 ? App.sel-path : ""}"); }
+    }
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 6px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        spacing: 3px;
+
+        WindowMoveArea {
+            width: 30px;
+            enabled: !App.fullscreen;
+            Image {
+                source: @image-url("assets/gimage.png");
+                width: 23px;
+                height: 23px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+            Tooltip { text: @markdown("GImage"); }
+            TouchArea { double-clicked => { root.maximize(); } }
+        }
+        AppButton {
+            compact: true;
+            text: "浏览";
+            icon: "grid";
+            ghost: true;
+            active: App.page == 0;
+            clicked => { App.page-requested(0); }
+        }
+        if App.page != 1: AppButton {
+            compact: true;
+            text: "预览";
+            icon: "image";
+            ghost: true;
+            clicked => { App.page-requested(1); }
+        }
+        if App.page == 1: AppButton {
+            compact: true;
+            text: "编辑";
+            icon: "edit";
+            enabled: App.preview-id >= 0 && !App.sel-missing;
+            clicked => { App.file-action(App.preview-id, "edit"); }
+        }
+        if App.page == 1: AppButton {
+            compact: true;
+            text: "打印";
+            icon: "print";
+            ghost: true;
+            enabled: App.preview-id >= 0 && !App.sel-missing;
+            clicked => { App.file-action(App.preview-id, "print"); }
+        }
+        if App.page == 2: IconButton {
+            icon: "undo"; tip: "撤销 · Ctrl+Z"; enabled: App.can-undo && !App.edit-saving;
+            clicked => { App.undo(); }
+        }
+        if App.page == 2: IconButton {
+            icon: "redo"; tip: "重做 · Ctrl+Y"; enabled: App.can-redo && !App.edit-saving;
+            clicked => { App.redo(); }
+        }
+        if App.page == 2: AppButton {
+            compact: true;
+            primary: true;
+            text: App.edit-saving ? "保存中…" : "保存";
+            icon: "save";
+            enabled: App.edit-dirty && !App.edit-saving;
+            clicked => { App.save-edit(); }
+        }
+
+        AppButton {
+            compact: true;
+            text: "转换";
+            icon: "convert";
+            ghost: true;
+            active: App.page == 5;
+            clicked => { App.open-batch-export(); }
+        }
+        AppButton {
+            compact: true;
+            text: "重命名";
+            icon: "rename";
+            ghost: true;
+            active: App.page == 6;
+            clicked => { App.open-rename(); }
+        }
+
+        Rectangle { horizontal-stretch: 1; }
+
+        if root.browser-actions: SearchBox {
+            width: 156px;
+            text <=> App.search-text;
+            placeholder: "搜索文件名";
+            edited(t) => { App.search-changed(t); }
+        }
+        if root.browser-actions: Segmented {
+            width: 136px;
+            emphasized-selection: true;
+            options: ["名称", "日期", "大小"];
+            current: App.sort-index;
+            changed(index) => { App.sort-changed(index, App.sort-descending); }
+        }
+        if root.browser-actions: IconButton {
+            icon: App.sort-descending ? "desc" : "asc";
+            tip: App.sort-descending ? "当前降序 · 切换升序" : "当前升序 · 切换降序";
+            clicked => { App.sort-changed(App.sort-index, !App.sort-descending); }
+        }
+        if App.page == 0: IconButton {
+            icon: "folder"; tip: "打开目录"; clicked => { App.open-folder(); }
+        }
+        if !App.fullscreen || App.active-tasks > 0: IconButton {
+            icon: "tasks";
+            tip: App.active-tasks > 0 ? "\{App.active-tasks} 个任务运行中" : "任务";
+            active: App.page == 3;
+            clicked => { App.page-requested(3); }
+        }
+        if !App.fullscreen: IconButton {
+            icon: "settings";
+            tip: "设置";
+            active: App.page == 4;
+            clicked => { App.page-requested(4); }
+        }
+        menu-anchor := IconMenu {
+            width: 32px;
+            menu-width: 220px;
+            shown-count: 6 + (root.preview-actions ? 4 : App.page == 2 ? 1 : 0)
+                + (App.page == 2 && App.edit-dirty ? 1 : 0)
+                + (root.browser-actions ? 1 + (App.scanning ? 0 : 1) : 0)
+                + (App.page != 5 ? 1 : 0);
+            commands: [
+                { label: "打开图片…", icon: "image", action: "open-image", shown: true },
+                { label: "打开目录…", icon: "folder", action: "open-folder", shown: true },
+                { label: "用其它软件打开…", icon: "external", action: "open-with", shown: root.preview-actions, divider: true },
+                { label: "打开文件目录", icon: "folder", action: "reveal", shown: root.preview-actions },
+                { label: "设置为桌面背景", icon: "image", action: "wallpaper", shown: root.preview-actions },
+                { label: "导出副本…", icon: "export", action: "export", shown: root.preview-actions || App.page == 2 },
+                { label: "清除草稿", icon: "trash", action: "clear-edit", shown: App.page == 2 && App.edit-dirty },
+                { label: App.favorites-only ? "显示全部图片" : "只看收藏", icon: "star", action: "favorite", shown: root.browser-actions, divider: true },
+                { label: "重新扫描", icon: "refresh", action: "refresh", shown: root.browser-actions && !App.scanning },
+                { label: "批量转换", icon: "convert", action: "convert", shown: App.page != 5 },
+                { label: Theme.dark ? "切换浅色主题" : "切换深色主题", icon: "theme", action: "theme", shown: true, divider: true },
+                { label: "任务", icon: "tasks", action: "tasks", shown: true },
+                { label: "设置", icon: "settings", action: "settings", shown: true },
+                { label: "文件关联…", icon: "link", action: "association", shown: true },
+            ];
+            chosen(action) => {
+                if (action == "open-image") { App.open-image(); }
+                else if (action == "open-folder") { App.open-folder(); }
+                else if (action == "open-with") { App.file-action(App.preview-id, "open-with"); }
+                else if (action == "reveal") { App.file-action(App.preview-id, "reveal"); }
+                else if (action == "wallpaper") { App.file-action(App.preview-id, "wallpaper"); }
+                else if (action == "export") { App.open-export(); }
+                else if (action == "clear-edit") { App.reset-edits(); }
+                else if (action == "favorite") { App.favorites-filter-changed(!App.favorites-only); }
+                else if (action == "refresh") { App.refresh(); }
+                else if (action == "convert") { App.open-batch-export(); }
+                else if (action == "theme") { App.theme-toggled(!Theme.dark); }
+                else if (action == "tasks") { App.page-requested(3); }
+                else if (action == "settings") { App.page-requested(4); }
+                else if (action == "association") { App.file-associations(); }
+            }
+            IconButton {
+                icon: "menu";
+                tip: "功能菜单";
+                clicked => { menu-anchor.show-at(-184px, root.height - 4px); }
+            }
+        }
+        if !App.fullscreen: IconButton {
+            icon: "minimize"; tip: "最小化"; clicked => { root.minimize(); }
+        }
+        if !App.fullscreen: IconButton {
+            icon: root.maximized ? "restore" : "maximize";
+            tip: root.maximized ? "还原窗口" : "最大化";
+            clicked => { root.maximize(); }
+        }
+        if !App.fullscreen: IconButton {
+            icon: "close"; tip: "关闭"; close-button: true;
+            clicked => { App.exit-requested(); }
+        }
+    }
+}
